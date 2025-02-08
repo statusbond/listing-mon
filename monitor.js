@@ -1,13 +1,37 @@
-// Simple Listing Monitor with Slack notifications
 require('dotenv').config();
 const express = require('express');
 
 const app = express();
 app.use(express.json());
 
-// Function to send notification to Slack
-async function sendSlackNotification(listingDetails, oldStatus, newStatus) {
-    // Create a nice looking Slack message
+// Main function to handle listing changes
+async function handleListingChange(notification) {
+    const listingId = notification.Listing.Id;
+    const changeType = notification.NewsFeed.Event;
+    const listingDetails = await getListingDetails(listingId, process.env.SPARK_ACCESS_TOKEN);
+
+    switch (changeType) {
+        case 'StatusChange':
+            await sendStatusChangeNotification(
+                listingDetails,
+                notification.OldStatus,
+                notification.NewStatus
+            );
+            break;
+        case 'PriceChange':
+            await sendPriceChangeNotification(
+                listingDetails,
+                notification.OldPrice,
+                notification.NewPrice
+            );
+            break;
+        default:
+            console.log(`Unhandled change type: ${changeType}`);
+    }
+}
+
+// Status change notification with simplified agent info
+async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus) {
     const message = {
         blocks: [
             {
@@ -22,7 +46,7 @@ async function sendSlackNotification(listingDetails, oldStatus, newStatus) {
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Address:*\n${listingDetails.address}`
+                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
                     },
                     {
                         "type": "mrkdwn",
@@ -35,27 +59,86 @@ async function sendSlackNotification(listingDetails, oldStatus, newStatus) {
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Price:* $${listingDetails.price.toLocaleString()}\n*Agent:* ${listingDetails.agent}`
+                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
                     },
                     {
                         "type": "mrkdwn",
-                        "text": `*Beds:* ${listingDetails.beds}\n*Baths:* ${listingDetails.baths}`
-                    }
-                ]
-            },
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `Time: ${new Date().toLocaleString()}`
+                        "text": `*Price:* $${listingDetails.price.toLocaleString()}`
                     }
                 ]
             }
         ]
     };
 
-    // Send to Slack
+    await sendSlackMessage(message);
+}
+
+// Price change notification with simplified agent info
+async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
+    const priceChange = newPrice - oldPrice;
+    const changePercent = ((priceChange / oldPrice) * 100).toFixed(1);
+    const changeDirection = priceChange > 0 ? "⬆️ Price Increase" : "⬇️ Price Reduction";
+    
+    const message = {
+        blocks: [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": `${changeDirection} Alert!`
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Price Change:*\n$${oldPrice.toLocaleString()} → $${newPrice.toLocaleString()}\n${changePercent}% (${priceChange > 0 ? '+' : ''}$${priceChange.toLocaleString()})`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
+                    }
+                ]
+            }
+        ]
+    };
+
+    await sendSlackMessage(message);
+}
+
+// Simplified getListingDetails function
+async function getListingDetails(listingId, accessToken) {
+    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`
+        }
+    });
+    
+    const data = await response.json();
+    const fields = data.D.Results[0].StandardFields;
+    
+    return {
+        address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+        city: fields.City,
+        state: fields.StateOrProvince,
+        price: fields.ListPrice,
+        agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
+        agentCell: fields.ListAgentCellPhone
+    };
+}
+
+// Generic function to send messages to Slack
+async function sendSlackMessage(message) {
     try {
         const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
             method: 'POST',
@@ -73,46 +156,10 @@ async function sendSlackNotification(listingDetails, oldStatus, newStatus) {
     }
 }
 
-// Function to get listing details from Spark API
-async function getListingDetails(listingId, accessToken) {
-    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`
-        }
-    });
-    
-    const data = await response.json();
-    
-    return {
-        address: data.UnparsedAddress,
-        price: data.ListPrice,
-        beds: data.BedsTotal,
-        baths: data.BathsTotal,
-        agent: data.ListAgentFullName
-    };
-}
-
 // Endpoint that receives webhook notifications from Spark API
 app.post('/webhook', async (req, res) => {
     try {
-        // Get the notification details
-        const notification = req.body;
-        const listingId = notification.Listing.Id;
-        
-        // Get the full listing details
-        const listingDetails = await getListingDetails(
-            listingId, 
-            process.env.SPARK_ACCESS_TOKEN
-        );
-        
-        // Send Slack notification
-        await sendSlackNotification(
-            listingDetails,
-            notification.OldStatus,
-            notification.NewStatus
-        );
-        
-        // Let Spark API know we received the webhook successfully
+        await handleListingChange(req.body);
         res.json({ success: true });
     } catch (error) {
         console.error('Error processing webhook:', error);
@@ -131,7 +178,7 @@ async function registerSparkWebhook() {
             },
             body: JSON.stringify({
                 D: {
-                    Uri: process.env.PUBLIC_WEBHOOK_URL,  // Your public URL
+                    Uri: process.env.PUBLIC_WEBHOOK_URL,
                     Active: true
                 }
             })
