@@ -239,9 +239,12 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
     await sendSlackMessage(message);
 }
 
-// Generic function to send messages to Slack
+// Generic function to send messages to Slack with detailed error logging
 async function sendSlackMessage(message) {
     try {
+        console.log('Attempting to send to Slack webhook:', process.env.SLACK_WEBHOOK_URL);
+        console.log('Message content:', JSON.stringify(message, null, 2));
+
         const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
             method: 'POST',
             headers: {
@@ -251,10 +254,23 @@ async function sendSlackMessage(message) {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to send to Slack');
+            const errorText = await response.text();
+            console.error('Slack response error:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorBody: errorText
+            });
+            throw new Error(`Failed to send to Slack: ${response.status} ${response.statusText}`);
         }
+
+        console.log('Successfully sent message to Slack');
     } catch (error) {
-        console.error('Error sending to Slack:', error);
+        console.error('Detailed Slack error:', {
+            message: error.message,
+            stack: error.stack,
+            webhookUrl: process.env.SLACK_WEBHOOK_URL ? 'URL present' : 'URL missing'
+        });
+        throw error;
     }
 }
 
