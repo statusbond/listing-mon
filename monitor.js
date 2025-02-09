@@ -19,17 +19,13 @@ const sampleListings = [
             PostalCode: "58103",
             ListPrice: 1079900,
             BedsTotal: 8,
-            BathroomsTotalInteger: 8,
+            BathsTotal: 8,
             BuildingAreaTotal: 7275,
+            OnMarketDate: "2024-01-01",
             ListAgentFirstName: "Joe",
             ListAgentLastName: "Agent",
-            ListAgentMobilePhone: "123-456-7890",
+            ListAgentCellPhone: "123-456-7890",
             ListAgentEmail: "joe@agent.com",
-            OpenHouse: [{
-                Date: "2025-02-15",
-                StartTime: "1:00 PM",
-                EndTime: "4:00 PM"
-            }],
             StandardStatus: "Active"
         }
     },
@@ -45,17 +41,13 @@ const sampleListings = [
             PostalCode: "58104",
             ListPrice: 450000,
             BedsTotal: 4,
-            BathroomsTotalInteger: 3,
+            BathsTotal: 3,
             BuildingAreaTotal: 2500,
+            OnMarketDate: "2024-01-15",
             ListAgentFirstName: "Jane",
             ListAgentLastName: "Smith",
-            ListAgentMobilePhone: "123-555-7890",
+            ListAgentCellPhone: "123-555-7890",
             ListAgentEmail: "jane@agent.com",
-            OpenHouse: [{
-                Date: "2025-02-16",
-                StartTime: "2:00 PM",
-                EndTime: "5:00 PM"
-            }],
             StandardStatus: "Active"
         }
     }
@@ -82,12 +74,6 @@ async function handleListingChange(notification) {
                 notification.NewPrice
             );
             break;
-        case 'OpenHouse':
-            await sendOpenHouseNotification(
-                listingDetails,
-                notification.OpenHouse
-            );
-            break;
         default:
             console.log(`Unhandled change type: ${changeType}`);
     }
@@ -99,26 +85,29 @@ async function getListingDetails(listingId, accessToken) {
         const sampleListing = sampleListings.find(l => l.Id === listingId);
         if (sampleListing) {
             const fields = sampleListing.StandardFields;
+            const listDate = new Date(fields.OnMarketDate || Date.now());
+            const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
+            
             return {
                 address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
                 city: fields.City,
                 state: fields.StateOrProvince,
                 zip: fields.PostalCode,
                 price: fields.ListPrice,
+                soldPrice: fields.ClosePrice,
                 beds: fields.BedsTotal,
-                baths: fields.BathroomsTotalInteger,
+                baths: fields.BathsTotal,
                 sqft: fields.BuildingAreaTotal,
                 agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-                agentCell: fields.ListAgentMobilePhone,
+                agentCell: fields.ListAgentCellPhone,
                 agentEmail: fields.ListAgentEmail,
-                openHouse: fields.OpenHouse,
-                photoUrl: `${process.env.PUBLIC_WEBHOOK_URL}/api/placeholder/300/200`,
+                daysOnMarket: daysOnMarket,
                 status: fields.StandardStatus
             };
         }
     }
 
-    const response = await fetch(`https://sparkapi.com/v1/listings/${listingId}`, {
+    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
         headers: {
             'Authorization': `Bearer ${accessToken}`
         }
@@ -126,27 +115,35 @@ async function getListingDetails(listingId, accessToken) {
     
     const data = await response.json();
     const fields = data.D.Results[0].StandardFields;
-    
+    const listDate = new Date(fields.OnMarketDate || Date.now());
+    const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
+
     return {
         address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
         city: fields.City,
         state: fields.StateOrProvince,
         zip: fields.PostalCode,
         price: fields.ListPrice,
+        soldPrice: fields.ClosePrice,
         beds: fields.BedsTotal,
-        baths: fields.BathroomsTotalInteger,
+        baths: fields.BathsTotal,
         sqft: fields.BuildingAreaTotal,
         agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-        agentCell: fields.ListAgentMobilePhone,
+        agentCell: fields.ListAgentCellPhone,
         agentEmail: fields.ListAgentEmail,
-        openHouse: fields.OpenHouse,
-        photoUrl: fields.Media?.[0]?.Uri300 || `${process.env.PUBLIC_WEBHOOK_URL}/api/placeholder/300/200`,
+        daysOnMarket: daysOnMarket,
         status: fields.StandardStatus
     };
 }
 
-// Status change notification
+// Updated status change notification
 async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus) {
+    const currentTime = new Date().toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        hour12: true 
+    });
+
     const message = {
         blocks: [
             {
@@ -157,24 +154,11 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
                 }
             },
             {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
-            },
-            {
                 "type": "section",
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Status Change:*\n${oldStatus} → ${newStatus}`
+                        "text": `*Address:* ${listingDetails.address}, ${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
                     }
                 ]
             },
@@ -183,11 +167,42 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
+                        "text": `*New Status:* ${newStatus} < ${oldStatus}`
                     },
                     {
                         "type": "mrkdwn",
-                        "text": `*Price:* $${listingDetails.price.toLocaleString()}`
+                        "text": `*Time:* ${currentTime}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Specs:* ${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft?.toLocaleString() || 'N/A'} sqft`
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Days on Market:* ${listingDetails.daysOnMarket}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Price:* $${(newStatus === 'Sold' ? listingDetails.soldPrice : listingDetails.price)?.toLocaleString()}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Agent:* ${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}\n${listingDetails.agentEmail || 'No email'}`
                     }
                 ]
             }
@@ -197,8 +212,14 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
     await sendSlackMessage(message);
 }
 
-// Price change notification
+// Updated price change notification
 async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
+    const currentTime = new Date().toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        hour12: true 
+    });
+
     const priceChange = newPrice - oldPrice;
     const changePercent = ((priceChange / oldPrice) * 100).toFixed(1);
     const changeDirection = priceChange > 0 ? "⬆️ Price Increase" : "⬇️ Price Reduction";
@@ -213,24 +234,24 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
                 }
             },
             {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Address:* ${listingDetails.address}, ${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
+                    }
+                ]
             },
             {
                 "type": "section",
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
+                        "text": `*New Price:* $${newPrice.toLocaleString()} < $${oldPrice.toLocaleString()} (${changePercent}%)`
                     },
                     {
                         "type": "mrkdwn",
-                        "text": `*Price Change:*\n$${oldPrice.toLocaleString()} → $${newPrice.toLocaleString()}\n${changePercent}% (${priceChange > 0 ? '+' : ''}$${priceChange.toLocaleString()})`
+                        "text": `*Time:* ${currentTime}`
                     }
                 ]
             },
@@ -239,46 +260,11 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
-                    }
-                ]
-            }
-        ]
-    };
-
-    await sendSlackMessage(message);
-}
-
-// New Open House notification
-async function sendOpenHouseNotification(listingDetails, openHouse) {
-    const message = {
-        blocks: [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "📅 New Open House Alert!"
-                }
-            },
-            {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Open House:*\n${openHouse.Date}\n${openHouse.StartTime} - ${openHouse.EndTime}`
+                        "text": `*Specs:* ${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft?.toLocaleString() || 'N/A'} sqft`
                     },
                     {
                         "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
+                        "text": `*Days on Market:* ${listingDetails.daysOnMarket}`
                     }
                 ]
             },
@@ -287,11 +273,7 @@ async function sendOpenHouseNotification(listingDetails, openHouse) {
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Price:* $${listingDetails.price.toLocaleString()}`
+                        "text": `*Status:* ${listingDetails.status}`
                     }
                 ]
             },
@@ -300,7 +282,7 @@ async function sendOpenHouseNotification(listingDetails, openHouse) {
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Details:*\n${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft.toLocaleString()} sqft`
+                        "text": `*Agent:* ${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}\n${listingDetails.agentEmail || 'No email'}`
                     }
                 ]
             }
@@ -385,20 +367,6 @@ app.get('/test-interface', (req, res) => {
                             newPrice: ${listing.StandardFields.ListPrice * 0.95}
                         })
                     })">Reduce Price 5%</button>
-
-                    <button onclick="fetch('/test-change', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            listingId: '${listing.Id}',
-                            type: 'OpenHouse',
-                            OpenHouse: {
-                                Date: '${listing.StandardFields.OpenHouse[0].Date}',
-                                StartTime: '${listing.StandardFields.OpenHouse[0].StartTime}',
-                                EndTime: '${listing.StandardFields.OpenHouse[0].EndTime}'
-                            }
-                        })
-                    })">Add Open House</button>
                 </div>
             `).join('')}
         </body>
@@ -408,7 +376,7 @@ app.get('/test-interface', (req, res) => {
 
 // Test change handler
 app.post('/test-change', async (req, res) => {
-    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice, OpenHouse } = req.body;
+    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
     
     // Find the listing in our sample data
     const listing = sampleListings.find(l => l.Id === listingId);
@@ -436,11 +404,9 @@ app.post('/test-change', async (req, res) => {
         webhookPayload.NewPrice = newPrice;
         // Update the sample listing price
         listing.StandardFields.ListPrice = newPrice;
-    } else if (type === 'OpenHouse') {
-        webhookPayload.OpenHouse = OpenHouse;
     }
-
-    try {
+    
+try {
         // Process the simulated change using our existing handler
         await handleListingChange(webhookPayload);
         res.json({ success: true });
@@ -461,8 +427,36 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Register the webhook with Spark API when the app starts
+async function registerSparkWebhook() {
+    try {
+        const response = await fetch('https://sparkplatform.com/api/v1/developers/newsfeeds/webhooks', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                D: {
+                    Uri: process.env.PUBLIC_WEBHOOK_URL,
+                    Active: true
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to register webhook');
+        }
+        
+        console.log('Spark webhook registered successfully');
+    } catch (error) {
+        console.error('Error registering webhook:', error);
+    }
+}
+
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+    await registerSparkWebhook();
 });
