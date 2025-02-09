@@ -69,8 +69,14 @@ async function handleListingChange(notification) {
     }
 }
 
-// Status change notification
+// Updated status change notification
 async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus) {
+    const currentTime = new Date().toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        hour12: true 
+    });
+
     const message = {
         blocks: [
             {
@@ -85,11 +91,7 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Status Change:*\n${oldStatus} → ${newStatus}`
+                        "text": `*Address:* ${listingDetails.address}, ${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
                     }
                 ]
             },
@@ -98,11 +100,42 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
+                        "text": `*New Status:* ${newStatus} < ${oldStatus}`
                     },
                     {
                         "type": "mrkdwn",
-                        "text": `*Price:* $${listingDetails.price.toLocaleString()}`
+                        "text": `*Time:* ${currentTime}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Specs:* ${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft?.toLocaleString() || 'N/A'} sqft`
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Days on Market:* ${listingDetails.daysOnMarket}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Price:* $${(newStatus === 'Sold' ? listingDetails.soldPrice : listingDetails.price)?.toLocaleString()}`
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": `*Agent:* ${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}\n${listingDetails.agentEmail || 'No email'}`
                     }
                 ]
             }
@@ -155,20 +188,29 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
     await sendSlackMessage(message);
 }
 
-// Simplified getListingDetails function
+// Enhanced getListingDetails function to include more fields
 async function getListingDetails(listingId, accessToken) {
-    // For testing, return mock data if no access token
     if (!accessToken) {
         const sampleListing = sampleListings.find(l => l.Id === listingId);
         if (sampleListing) {
             const fields = sampleListing.StandardFields;
+            const listDate = new Date(fields.OnMarketDate || Date.now());
+            const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
+            
             return {
-                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
                 city: fields.City,
                 state: fields.StateOrProvince,
+                zip: fields.PostalCode,
                 price: fields.ListPrice,
+                soldPrice: fields.ClosePrice,
+                beds: fields.BedsTotal,
+                baths: fields.BathsTotal,
+                sqft: fields.BuildingAreaTotal,
                 agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-                agentCell: fields.ListAgentCellPhone
+                agentCell: fields.ListAgentCellPhone,
+                agentEmail: fields.ListAgentEmail,
+                daysOnMarket: daysOnMarket
             };
         }
     }
@@ -181,14 +223,23 @@ async function getListingDetails(listingId, accessToken) {
     
     const data = await response.json();
     const fields = data.D.Results[0].StandardFields;
-    
+    const listDate = new Date(fields.OnMarketDate || Date.now());
+    const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
+
     return {
-        address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+        address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
         city: fields.City,
         state: fields.StateOrProvince,
+        zip: fields.PostalCode,
         price: fields.ListPrice,
+        soldPrice: fields.ClosePrice,
+        beds: fields.BedsTotal,
+        baths: fields.BathsTotal,
+        sqft: fields.BuildingAreaTotal,
         agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-        agentCell: fields.ListAgentCellPhone
+        agentCell: fields.ListAgentCellPhone,
+        agentEmail: fields.ListAgentEmail,
+        daysOnMarket: daysOnMarket
     };
 }
 
