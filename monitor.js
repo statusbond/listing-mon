@@ -21,7 +21,11 @@ const sampleListings = [
             BathsTotal: 8,
             ListAgentFirstName: "Joe",
             ListAgentLastName: "Agent",
-            ListAgentCellPhone: "123-456-7890"
+            ListAgentCellPhone: "123-456-7890",
+            Photos: [{
+                Primary: true,
+                Uri300: "https://photos.sparkplatform.com/example.jpg"
+            }]
         }
     },
     {
@@ -38,7 +42,11 @@ const sampleListings = [
             BathsTotal: 3,
             ListAgentFirstName: "Jane",
             ListAgentLastName: "Smith",
-            ListAgentCellPhone: "123-555-7890"
+            ListAgentCellPhone: "123-555-7890",
+            Photos: [{
+                Primary: true,
+                Uri300: "https://photos.sparkplatform.com/example2.jpg"
+            }]
         }
     }
 ];
@@ -69,7 +77,50 @@ async function handleListingChange(notification) {
     }
 }
 
-// Status change notification with simplified agent info
+// Enhanced getListingDetails function to include photo
+async function getListingDetails(listingId, accessToken) {
+    // For testing, return mock data if no access token
+    if (!accessToken) {
+        const sampleListing = sampleListings.find(l => l.Id === listingId);
+        if (sampleListing) {
+            const fields = sampleListing.StandardFields;
+            return {
+                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+                city: fields.City,
+                state: fields.StateOrProvince,
+                price: fields.ListPrice,
+                agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
+                agentCell: fields.ListAgentCellPhone,
+                photoUrl: fields.Photos?.[0]?.Uri300 || null
+            };
+        }
+    }
+
+    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`
+        }
+    });
+    
+    const data = await response.json();
+    const fields = data.D.Results[0].StandardFields;
+    
+    // Find the primary photo if available, use smaller Uri300 size
+    const primaryPhoto = fields.Photos?.find(p => p.Primary)?.Uri300 || 
+                        fields.Photos?.[0]?.Uri300;
+
+    return {
+        address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+        city: fields.City,
+        state: fields.StateOrProvince,
+        price: fields.ListPrice,
+        agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
+        agentCell: fields.ListAgentCellPhone,
+        photoUrl: primaryPhoto
+    };
+}
+
+// Simplified status change notification with smaller image
 async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus) {
     const message = {
         blocks: [
@@ -79,40 +130,57 @@ async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus
                     "type": "plain_text",
                     "text": "🏠 Listing Status Change Alert!"
                 }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Status Change:*\n${oldStatus} → ${newStatus}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Price:* $${listingDetails.price.toLocaleString()}`
-                    }
-                ]
             }
         ]
     };
 
+    // Add image if available (using smaller size)
+    if (listingDetails.photoUrl) {
+        message.blocks.push({
+            "type": "image",
+            "title": {
+                "type": "plain_text",
+                "text": listingDetails.address
+            },
+            "image_url": listingDetails.photoUrl,
+            "alt_text": "Property image"
+        });
+    }
+
+    // Add main info
+    message.blocks.push(
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": `*Status Change:*\n${oldStatus} → ${newStatus}`
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": `*Price:* $${listingDetails.price.toLocaleString()}`
+                }
+            ]
+        }
+    );
+
     await sendSlackMessage(message);
 }
 
-// Price change notification with simplified agent info
+// Price change notification with smaller image
 async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
     const priceChange = newPrice - oldPrice;
     const changePercent = ((priceChange / oldPrice) * 100).toFixed(1);
@@ -126,71 +194,49 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
                     "type": "plain_text",
                     "text": `${changeDirection} Alert!`
                 }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Price Change:*\n$${oldPrice.toLocaleString()} → $${newPrice.toLocaleString()}\n${changePercent}% (${priceChange > 0 ? '+' : ''}$${priceChange.toLocaleString()})`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
-                    }
-                ]
             }
         ]
     };
 
-    await sendSlackMessage(message);
-}
-
-// Simplified getListingDetails function
-async function getListingDetails(listingId, accessToken) {
-    // For testing, look up listing in sample data if no access token
-    if (!accessToken) {
-        const sampleListing = sampleListings.find(l => l.Id === listingId);
-        if (sampleListing) {
-            const fields = sampleListing.StandardFields;
-            return {
-                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
-                city: fields.City,
-                state: fields.StateOrProvince,
-                price: fields.ListPrice,
-                agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-                agentCell: fields.ListAgentCellPhone
-            };
-        }
+    // Add image if available
+    if (listingDetails.photoUrl) {
+        message.blocks.push({
+            "type": "image",
+            "title": {
+                "type": "plain_text",
+                "text": listingDetails.address
+            },
+            "image_url": listingDetails.photoUrl,
+            "alt_text": "Property image"
+        });
     }
 
-    // Real API call if we have an access token
-    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`
+    message.blocks.push(
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": `*Listing Agent:*\n${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}`
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": `*Price Change:*\n$${oldPrice.toLocaleString()} → $${newPrice.toLocaleString()}\n${changePercent}% (${priceChange > 0 ? '+' : ''}$${priceChange.toLocaleString()})`
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": `*Property:*\n${listingDetails.address}\n${listingDetails.city}, ${listingDetails.state}`
+                }
+            ]
         }
-    });
-    
-    const data = await response.json();
-    const fields = data.D.Results[0].StandardFields;
-    
-    return {
-        address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
-        city: fields.City,
-        state: fields.StateOrProvince,
-        price: fields.ListPrice,
-        agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-        agentCell: fields.ListAgentCellPhone
-    };
+    );
+
+    await sendSlackMessage(message);
 }
 
 // Generic function to send messages to Slack
