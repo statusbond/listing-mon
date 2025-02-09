@@ -408,4 +408,61 @@ app.get('/test-interface', (req, res) => {
 
 // Test change handler
 app.post('/test-change', async (req, res) => {
-    const { listingId, type, oldStatus,
+    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice, OpenHouse } = req.body;
+    
+    // Find the listing in our sample data
+    const listing = sampleListings.find(l => l.Id === listingId);
+    
+    if (!listing) {
+        return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    // Simulate the webhook payload
+    const webhookPayload = {
+        Listing: { Id: listingId },
+        NewsFeed: { 
+            Event: type,
+            EventTimestamp: new Date().toISOString()
+        }
+    };
+
+    if (type === 'StatusChange') {
+        webhookPayload.OldStatus = oldStatus;
+        webhookPayload.NewStatus = newStatus;
+        // Update the sample listing status
+        listing.StandardFields.StandardStatus = newStatus;
+    } else if (type === 'PriceChange') {
+        webhookPayload.OldPrice = oldPrice;
+        webhookPayload.NewPrice = newPrice;
+        // Update the sample listing price
+        listing.StandardFields.ListPrice = newPrice;
+    } else if (type === 'OpenHouse') {
+        webhookPayload.OpenHouse = OpenHouse;
+    }
+
+    try {
+        // Process the simulated change using our existing handler
+        await handleListingChange(webhookPayload);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error processing test change:', error);
+        res.status(500).json({ error: 'Failed to process change' });
+    }
+});
+
+// Endpoint that receives webhook notifications from Spark API
+app.post('/webhook', async (req, res) => {
+    try {
+        await handleListingChange(req.body);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error processing webhook:', error);
+        res.status(500).json({ error: 'Failed to process notification' });
+    }
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+});
