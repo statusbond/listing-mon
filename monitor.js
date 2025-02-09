@@ -4,6 +4,45 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 
+// Sample listing data for testing
+const sampleListings = [
+    {
+        Id: "20060412165917817933000000",
+        StandardFields: {
+            ListingId: "10-1796",
+            StreetNumber: "611",
+            StreetName: "8th",
+            StreetSuffix: "St",
+            StreetDirSuffix: "S",
+            City: "Fargo",
+            StateOrProvince: "ND",
+            ListPrice: 1079900,
+            BedsTotal: 8,
+            BathsTotal: 8,
+            ListAgentFirstName: "Joe",
+            ListAgentLastName: "Agent",
+            ListAgentCellPhone: "123-456-7890"
+        }
+    },
+    {
+        Id: "20060412165917817933000001",
+        StandardFields: {
+            ListingId: "10-1797",
+            StreetNumber: "123",
+            StreetName: "Main",
+            StreetSuffix: "Ave",
+            City: "Fargo",
+            StateOrProvince: "ND",
+            ListPrice: 450000,
+            BedsTotal: 4,
+            BathsTotal: 3,
+            ListAgentFirstName: "Jane",
+            ListAgentLastName: "Smith",
+            ListAgentCellPhone: "123-555-7890"
+        }
+    }
+];
+
 // Main function to handle listing changes
 async function handleListingChange(notification) {
     const listingId = notification.Listing.Id;
@@ -118,6 +157,23 @@ async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
 
 // Simplified getListingDetails function
 async function getListingDetails(listingId, accessToken) {
+    // For testing, look up listing in sample data if no access token
+    if (!accessToken) {
+        const sampleListing = sampleListings.find(l => l.Id === listingId);
+        if (sampleListing) {
+            const fields = sampleListing.StandardFields;
+            return {
+                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''} ${fields.StreetDirSuffix || ''}`,
+                city: fields.City,
+                state: fields.StateOrProvince,
+                price: fields.ListPrice,
+                agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
+                agentCell: fields.ListAgentCellPhone
+            };
+        }
+    }
+
+    // Real API call if we have an access token
     const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
         headers: {
             'Authorization': `Bearer ${accessToken}`
@@ -155,6 +211,93 @@ async function sendSlackMessage(message) {
         console.error('Error sending to Slack:', error);
     }
 }
+
+// Test interface route
+app.get('/test-interface', (req, res) => {
+    res.send(`
+        <html>
+        <head>
+            <title>Listing Status Test Interface</title>
+            <style>
+                body { font-family: Arial; padding: 20px; }
+                .listing { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+                button { margin: 5px; padding: 5px 10px; }
+            </style>
+        </head>
+        <body>
+            <h1>Test Interface</h1>
+            ${sampleListings.map(listing => `
+                <div class="listing">
+                    <h3>${listing.StandardFields.StreetNumber} ${listing.StandardFields.StreetName} 
+                        ${listing.StandardFields.StreetSuffix}</h3>
+                    <p>Current Price: $${listing.StandardFields.ListPrice}</p>
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'StatusChange',
+                            oldStatus: 'Active',
+                            newStatus: 'Pending'
+                        })
+                    })">Change to Pending</button>
+                    
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'PriceChange',
+                            oldPrice: ${listing.StandardFields.ListPrice},
+                            newPrice: ${listing.StandardFields.ListPrice * 0.95}
+                        })
+                    })">Reduce Price 5%</button>
+                </div>
+            `).join('')}
+        </body>
+        </html>
+    `);
+});
+
+// Test change handler
+app.post('/test-change', async (req, res) => {
+    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
+    
+    // Find the listing in our sample data
+    const listing = sampleListings.find(l => l.Id === listingId);
+    
+    if (!listing) {
+        return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    // Simulate the webhook payload
+    const webhookPayload = {
+        Listing: { Id: listingId },
+        NewsFeed: { 
+            Event: type,
+            EventTimestamp: new Date().toISOString()
+        }
+    };
+
+    if (type === 'StatusChange') {
+        webhookPayload.OldStatus = oldStatus;
+        webhookPayload.NewStatus = newStatus;
+    } else if (type === 'PriceChange') {
+        webhookPayload.OldPrice = oldPrice;
+        webhookPayload.NewPrice = newPrice;
+        // Update the sample listing price
+        listing.StandardFields.ListPrice = newPrice;
+    }
+
+    try {
+        // Process the simulated change using our existing handler
+        await handleListingChange(webhookPayload);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error processing test change:', error);
+        res.status(500).json({ error: 'Failed to process change' });
+    }
+});
 
 // Endpoint that receives webhook notifications from Spark API
 app.post('/webhook', async (req, res) => {
