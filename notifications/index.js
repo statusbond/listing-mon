@@ -4,42 +4,27 @@ const {
     sendOpenHouseSlack 
 } = require('./slack');
 
-const { 
-    sendStatusChangeSMS, 
-    sendPriceChangeSMS, 
-    sendOpenHouseSMS 
-} = require('./twilio');
-
 async function sendStatusChange(listingDetails, oldStatus, newStatus) {
     try {
-        await Promise.all([
-            sendStatusChangeSlack(listingDetails, oldStatus, newStatus),
-            sendStatusChangeSMS(listingDetails, oldStatus, newStatus)
-        ]);
+        await sendStatusChangeSlack(listingDetails, oldStatus, newStatus);
     } catch (error) {
-        console.error('Error sending notifications:', error);
+        console.error('Error sending Slack notification:', error);
     }
 }
 
 async function sendPriceChange(listingDetails, oldPrice, newPrice) {
     try {
-        await Promise.all([
-            sendPriceChangeSlack(listingDetails, oldPrice, newPrice),
-            sendPriceChangeSMS(listingDetails, oldPrice, newPrice)
-        ]);
+        await sendPriceChangeSlack(listingDetails, oldPrice, newPrice);
     } catch (error) {
-        console.error('Error sending notifications:', error);
+        console.error('Error sending Slack notification:', error);
     }
 }
 
 async function sendOpenHouse(listingDetails, openHouse) {
     try {
-        await Promise.all([
-            sendOpenHouseSlack(listingDetails, openHouse),
-            sendOpenHouseSMS(listingDetails, openHouse)
-        ]);
+        await sendOpenHouseSlack(listingDetails, openHouse);
     } catch (error) {
-        console.error('Error sending notifications:', error);
+        console.error('Error sending Slack notification:', error);
     }
 }
 
