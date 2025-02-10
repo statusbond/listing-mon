@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const { sendStatusChange, sendPriceChange, sendOpenHouse } = require('./notifications');
 
 const app = express();
 app.use(express.json());
@@ -19,13 +20,17 @@ const sampleListings = [
             PostalCode: "58103",
             ListPrice: 1079900,
             BedsTotal: 8,
-            BathsTotal: 8,
+            BathroomsTotalInteger: 8,
             BuildingAreaTotal: 7275,
-            OnMarketDate: "2024-01-01",
             ListAgentFirstName: "Joe",
             ListAgentLastName: "Agent",
-            ListAgentCellPhone: "123-456-7890",
+            ListAgentMobilePhone: "123-456-7890",
             ListAgentEmail: "joe@agent.com",
+            OpenHouse: [{
+                Date: "2025-02-15",
+                StartTime: "1:00 PM",
+                EndTime: "4:00 PM"
+            }],
             StandardStatus: "Active"
         }
     },
@@ -41,13 +46,17 @@ const sampleListings = [
             PostalCode: "58104",
             ListPrice: 450000,
             BedsTotal: 4,
-            BathsTotal: 3,
+            BathroomsTotalInteger: 3,
             BuildingAreaTotal: 2500,
-            OnMarketDate: "2024-01-15",
             ListAgentFirstName: "Jane",
             ListAgentLastName: "Smith",
-            ListAgentCellPhone: "123-555-7890",
+            ListAgentMobilePhone: "123-555-7890",
             ListAgentEmail: "jane@agent.com",
+            OpenHouse: [{
+                Date: "2025-02-16",
+                StartTime: "2:00 PM",
+                EndTime: "5:00 PM"
+            }],
             StandardStatus: "Active"
         }
     }
@@ -61,17 +70,23 @@ async function handleListingChange(notification) {
 
     switch (changeType) {
         case 'StatusChange':
-            await sendStatusChangeNotification(
+            await sendStatusChange(
                 listingDetails,
                 notification.OldStatus,
                 notification.NewStatus
             );
             break;
         case 'PriceChange':
-            await sendPriceChangeNotification(
+            await sendPriceChange(
                 listingDetails,
                 notification.OldPrice,
                 notification.NewPrice
+            );
+            break;
+        case 'OpenHouse':
+            await sendOpenHouse(
+                listingDetails,
+                notification.OpenHouse
             );
             break;
         default:
@@ -85,29 +100,26 @@ async function getListingDetails(listingId, accessToken) {
         const sampleListing = sampleListings.find(l => l.Id === listingId);
         if (sampleListing) {
             const fields = sampleListing.StandardFields;
-            const listDate = new Date(fields.OnMarketDate || Date.now());
-            const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
-            
             return {
                 address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
                 city: fields.City,
                 state: fields.StateOrProvince,
                 zip: fields.PostalCode,
                 price: fields.ListPrice,
-                soldPrice: fields.ClosePrice,
                 beds: fields.BedsTotal,
-                baths: fields.BathsTotal,
+                baths: fields.BathroomsTotalInteger,
                 sqft: fields.BuildingAreaTotal,
                 agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-                agentCell: fields.ListAgentCellPhone,
+                agentCell: fields.ListAgentMobilePhone,
                 agentEmail: fields.ListAgentEmail,
-                daysOnMarket: daysOnMarket,
+                openHouse: fields.OpenHouse,
+                photoUrl: `${process.env.PUBLIC_WEBHOOK_URL}/api/placeholder/300/200`,
                 status: fields.StandardStatus
             };
         }
     }
 
-    const response = await fetch(`https://sparkplatform.com/api/v1/listings/${listingId}`, {
+    const response = await fetch(`https://sparkapi.com/v1/listings/${listingId}`, {
         headers: {
             'Authorization': `Bearer ${accessToken}`
         }
@@ -115,216 +127,23 @@ async function getListingDetails(listingId, accessToken) {
     
     const data = await response.json();
     const fields = data.D.Results[0].StandardFields;
-    const listDate = new Date(fields.OnMarketDate || Date.now());
-    const daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
-
+    
     return {
         address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
         city: fields.City,
         state: fields.StateOrProvince,
         zip: fields.PostalCode,
         price: fields.ListPrice,
-        soldPrice: fields.ClosePrice,
         beds: fields.BedsTotal,
-        baths: fields.BathsTotal,
+        baths: fields.BathroomsTotalInteger,
         sqft: fields.BuildingAreaTotal,
         agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-        agentCell: fields.ListAgentCellPhone,
+        agentCell: fields.ListAgentMobilePhone,
         agentEmail: fields.ListAgentEmail,
-        daysOnMarket: daysOnMarket,
+        openHouse: fields.OpenHouse,
+        photoUrl: fields.Media?.[0]?.Uri300 || `${process.env.PUBLIC_WEBHOOK_URL}/api/placeholder/300/200`,
         status: fields.StandardStatus
     };
-}
-
-// Updated status change notification
-async function sendStatusChangeNotification(listingDetails, oldStatus, newStatus) {
-    const currentTime = new Date().toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: true 
-    });
-
-    const message = {
-        blocks: [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "🏠 Listing Status Change Alert!"
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Address:* ${listingDetails.address}, ${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*New Status:* ${newStatus} < ${oldStatus}`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Time:* ${currentTime}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Specs:* ${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft?.toLocaleString() || 'N/A'} sqft`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Days on Market:* ${listingDetails.daysOnMarket}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Price:* $${(newStatus === 'Sold' ? listingDetails.soldPrice : listingDetails.price)?.toLocaleString()}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Agent:* ${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}\n${listingDetails.agentEmail || 'No email'}`
-                    }
-                ]
-            }
-        ]
-    };
-
-    await sendSlackMessage(message);
-}
-
-// Updated price change notification
-async function sendPriceChangeNotification(listingDetails, oldPrice, newPrice) {
-    const currentTime = new Date().toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: true 
-    });
-
-    const priceChange = newPrice - oldPrice;
-    const changePercent = ((priceChange / oldPrice) * 100).toFixed(1);
-    const changeDirection = priceChange > 0 ? "⬆️ Price Increase" : "⬇️ Price Reduction";
-    
-    const message = {
-        blocks: [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": `${changeDirection} Alert!`
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Address:* ${listingDetails.address}, ${listingDetails.city}, ${listingDetails.state} ${listingDetails.zip}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*New Price:* $${newPrice.toLocaleString()} < $${oldPrice.toLocaleString()} (${changePercent}%)`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Time:* ${currentTime}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Specs:* ${listingDetails.beds} beds | ${listingDetails.baths} baths | ${listingDetails.sqft?.toLocaleString() || 'N/A'} sqft`
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Days on Market:* ${listingDetails.daysOnMarket}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Status:* ${listingDetails.status}`
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": `*Agent:* ${listingDetails.agent}\n${listingDetails.agentCell || 'No phone'}\n${listingDetails.agentEmail || 'No email'}`
-                    }
-                ]
-            }
-        ]
-    };
-
-    await sendSlackMessage(message);
-}
-
-// Generic function to send messages to Slack with detailed error logging
-async function sendSlackMessage(message) {
-    try {
-        console.log('Attempting to send to Slack webhook:', process.env.SLACK_WEBHOOK_URL);
-        console.log('Message content:', JSON.stringify(message, null, 2));
-
-        const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(message)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Slack response error:', {
-                status: response.status,
-                statusText: response.statusText,
-                errorBody: errorText
-            });
-            throw new Error(`Failed to send to Slack: ${response.status} ${response.statusText}`);
-        }
-
-        console.log('Successfully sent message to Slack');
-    } catch (error) {
-        console.error('Detailed Slack error:', {
-            message: error.message,
-            stack: error.stack,
-            webhookUrl: process.env.SLACK_WEBHOOK_URL ? 'URL present' : 'URL missing'
-        });
-        throw error;
-    }
 }
 
 // Test interface route
@@ -367,6 +186,20 @@ app.get('/test-interface', (req, res) => {
                             newPrice: ${listing.StandardFields.ListPrice * 0.95}
                         })
                     })">Reduce Price 5%</button>
+
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'OpenHouse',
+                            OpenHouse: {
+                                Date: '${listing.StandardFields.OpenHouse[0].Date}',
+                                StartTime: '${listing.StandardFields.OpenHouse[0].StartTime}',
+                                EndTime: '${listing.StandardFields.OpenHouse[0].EndTime}'
+                            }
+                        })
+                    })">Add Open House</button>
                 </div>
             `).join('')}
         </body>
@@ -376,7 +209,7 @@ app.get('/test-interface', (req, res) => {
 
 // Test change handler
 app.post('/test-change', async (req, res) => {
-    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
+    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice, OpenHouse } = req.body;
     
     // Find the listing in our sample data
     const listing = sampleListings.find(l => l.Id === listingId);
@@ -397,17 +230,16 @@ app.post('/test-change', async (req, res) => {
     if (type === 'StatusChange') {
         webhookPayload.OldStatus = oldStatus;
         webhookPayload.NewStatus = newStatus;
-        // Update the sample listing status
         listing.StandardFields.StandardStatus = newStatus;
     } else if (type === 'PriceChange') {
         webhookPayload.OldPrice = oldPrice;
         webhookPayload.NewPrice = newPrice;
-        // Update the sample listing price
         listing.StandardFields.ListPrice = newPrice;
+    } else if (type === 'OpenHouse') {
+        webhookPayload.OpenHouse = OpenHouse;
     }
-    
-try {
-        // Process the simulated change using our existing handler
+
+    try {
         await handleListingChange(webhookPayload);
         res.json({ success: true });
     } catch (error) {
@@ -416,47 +248,8 @@ try {
     }
 });
 
-// Endpoint that receives webhook notifications from Spark API
-app.post('/webhook', async (req, res) => {
-    try {
-        await handleListingChange(req.body);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Error processing webhook:', error);
-        res.status(500).json({ error: 'Failed to process notification' });
-    }
-});
-
-// Register the webhook with Spark API when the app starts
-async function registerSparkWebhook() {
-    try {
-        const response = await fetch('https://sparkplatform.com/api/v1/developers/newsfeeds/webhooks', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                D: {
-                    Uri: process.env.PUBLIC_WEBHOOK_URL,
-                    Active: true
-                }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to register webhook');
-        }
-        
-        console.log('Spark webhook registered successfully');
-    } catch (error) {
-        console.error('Error registering webhook:', error);
-    }
-}
-
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    await registerSparkWebhook();
 });
