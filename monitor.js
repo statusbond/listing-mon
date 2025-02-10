@@ -97,24 +97,26 @@ async function pollSparkAPI() {
         const timestamp = new Date().toISOString();
         console.log(`[${timestamp}] Starting SparkAPI poll...`);
 
+        // Filter to fetch Active and Pending listings
         const params = new URLSearchParams({
-            '$top': '100', // Increase number of listings checked
-            '$orderby': 'ModificationTimestamp desc', // Get most recently modified first
-            '$filter': 'StandardStatus ne \'Closed\'', // Only active listings
-            '$select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,StandardFields'
+            '$top': '100', 
+            '$orderby': 'ModificationTimestamp desc', 
+            '$filter': 'StandardStatus eq \'Active\' or StandardStatus eq \'Pending\'', 
+            '$select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,OpenHouse,StandardFields'
         });
 
         const response = await sparApiRequest(`/listings?${params}`);
         const currentListings = response.D.Results;
 
-        console.log(`[${timestamp}] Fetched ${currentListings.length} listings`);
+        console.log(`[${timestamp}] Fetched ${currentListings.length} active/pending listings`);
 
         for (const listing of currentListings) {
             const listingId = listing.Id;
             const currentState = {
                 status: listing.StandardFields.StandardStatus,
                 price: listing.StandardFields.ListPrice,
-                modificationTimestamp: listing.StandardFields.ModificationTimestamp
+                modificationTimestamp: listing.StandardFields.ModificationTimestamp,
+                openHouse: listing.StandardFields.OpenHouse
             };
 
             const previousState = previousListingStates.get(listingId);
@@ -125,7 +127,7 @@ async function pollSparkAPI() {
                 console.log('Previous state:', previousState);
                 console.log('Current state:', currentState);
 
-                // Check for status change
+                // Status change detection (including transitions to Closed, Cancelled, Withdrawn)
                 if (previousState.status !== currentState.status) {
                     console.log(`[${timestamp}] Status change detected for ${listingId}`);
                     const listingDetails = await getListingDetails(listingId);
@@ -136,7 +138,7 @@ async function pollSparkAPI() {
                     );
                 }
 
-                // Check for price change
+                // Price change detection
                 if (previousState.price !== currentState.price) {
                     console.log(`[${timestamp}] Price change detected for ${listingId}`);
                     const listingDetails = await getListingDetails(listingId);
@@ -144,6 +146,21 @@ async function pollSparkAPI() {
                         listingDetails,
                         previousState.price,
                         currentState.price
+                    );
+                }
+
+                // Open House detection
+                const hasNewOpenHouse = 
+                    (!previousState.openHouse && currentState.openHouse) || 
+                    (previousState.openHouse && currentState.openHouse && 
+                     JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse));
+
+                if (hasNewOpenHouse) {
+                    console.log(`[${timestamp}] New Open House detected for ${listingId}`);
+                    const listingDetails = await getListingDetails(listingId);
+                    await sendOpenHouse(
+                        listingDetails,
+                        currentState.openHouse
                     );
                 }
             } else {
