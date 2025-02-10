@@ -191,8 +191,100 @@ app.get('/polling-status', (req, res) => {
     });
 });
 
-// Existing test interface and test change routes from previous implementation would go here
-// (Include the routes from the previous monitor.js)
+{
+    // Keep the entire previous implementation, but update the test interface route like this:
+
+    // Test interface route
+    app.get('/test-interface', async (req, res) => {
+        try {
+            const accessToken = process.env.SPARK_ACCESS_TOKEN;
+            
+            if (!accessToken) {
+                return res.status(400).send('No SparkAPI access token provided');
+            }
+
+            const params = new URLSearchParams({
+                '$top': '10',
+                '$select': 'ListingId,StandardFields'
+            });
+
+            const response = await sparApiRequest(`/listings?${params}`);
+            const listings = response.D.Results;
+
+            res.send(`
+                <html>
+                <head>
+                    <title>Listing Status Test Interface</title>
+                    <style>
+                        body { font-family: Arial; padding: 20px; }
+                        .listing { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+                        button { margin: 5px; padding: 5px 10px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Test Interface - Real Listings</h1>
+                    ${listings.map(listing => `
+                        <div class="listing">
+                            <h3>${listing.StandardFields.StreetNumber} ${listing.StandardFields.StreetName} 
+                                ${listing.StandardFields.StreetSuffix || ''}</h3>
+                            <p>Current Price: $${listing.StandardFields.ListPrice.toLocaleString()}</p>
+                            <p>Current Status: ${listing.StandardFields.StandardStatus}</p>
+                            <button onclick="fetch('/test-change', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    listingId: '${listing.Id}',
+                                    type: 'StatusChange',
+                                    oldStatus: '${listing.StandardFields.StandardStatus}',
+                                    newStatus: '${listing.StandardFields.StandardStatus === 'Active' ? 'Pending' : 'Active'}'
+                                })
+                            })">Toggle Status</button>
+                            
+                            <button onclick="fetch('/test-change', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    listingId: '${listing.Id}',
+                                    type: 'PriceChange',
+                                    oldPrice: ${listing.StandardFields.ListPrice},
+                                    newPrice: ${Math.round(listing.StandardFields.ListPrice * 0.95)}
+                                })
+                            })">Reduce Price 5%</button>
+                        </div>
+                    `).join('')}
+                </body>
+                </html>
+            `);
+        } catch (error) {
+            console.error('Error generating test interface:', error);
+            res.status(500).send(`Error: ${error.message}`);
+        }
+    });
+
+    // Test change handler for processing changes
+    app.post('/test-change', async (req, res) => {
+        const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
+        
+        try {
+            // Fetch listing details
+            const listingDetails = await getListingDetails(listingId);
+            
+            switch (type) {
+                case 'StatusChange':
+                    await sendStatusChange(listingDetails, oldStatus, newStatus);
+                    break;
+                case 'PriceChange':
+                    await sendPriceChange(listingDetails, oldPrice, newPrice);
+                    break;
+            }
+
+            res.json({ success: true });
+        } catch (error) {
+            console.error('Error processing test change:', error);
+            res.status(500).json({ error: 'Failed to process change', details: error.message });
+        }
+    });
+}
 
 // Start the server
 const PORT = process.env.PORT || 3000;
