@@ -7,12 +7,9 @@ const client = twilio(
 
 async function sendSMS(message) {
     try {
-        await client.messages.create({
-            body: message,
-            to: process.env.NOTIFICATION_PHONE_NUMBER,
-            from: process.env.TWILIO_FROM_NUMBER
-        });
-        console.log('Successfully sent SMS');
+        // Just log instead of sending
+        console.log('SMS would have been sent:', message);
+        console.log('Successfully logged SMS (sending disabled)');
     } catch (error) {
         console.error('Twilio error:', error);
         throw error;
