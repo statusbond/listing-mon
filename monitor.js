@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // Spark API Configuration
-const SPARK_API_BASE_URL = 'https://sparkapi.com/v1';
+const SPARK_API_BASE_URL = 'https://replication.sparkapi.com/v1';
 const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // Helper function to create secure API request
