@@ -1,7 +1,97 @@
-// Add this near the top of your monitor.js file
-const previousListingStates = new Map(); // Store previous listing states
+require('dotenv').config();
+const express = require('express');
+const { sendStatusChange, sendPriceChange, sendOpenHouse } = require('./notifications');
 
-// Enhanced polling function
+const app = express();
+app.use(express.json());
+
+// Spark API Configuration
+const SPARK_API_BASE_URL = 'https://replication.sparkapi.com/v1';
+const POLLING_INTERVAL = 2 * 60 * 1000; // 2 minutes
+
+// Persistent storage for listing states
+const previousListingStates = new Map();
+
+// Helper function to create secure API request
+async function sparApiRequest(endpoint, method = 'GET', body = null) {
+    const accessToken = process.env.SPARK_ACCESS_TOKEN;
+    
+    if (!accessToken) {
+        throw new Error('No SparkAPI access token provided');
+    }
+
+    const headers = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    };
+
+    const config = {
+        method,
+        headers
+    };
+
+    if (body) {
+        config.body = JSON.stringify(body);
+    }
+
+    const fullUrl = `${SPARK_API_BASE_URL}${endpoint}`;
+
+    try {
+        const response = await fetch(fullUrl, config);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`SparkAPI request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Detailed Spark API Error:', {
+            message: error.message,
+            endpoint: fullUrl,
+            method
+        });
+        throw error;
+    }
+}
+
+// Enhanced getListingDetails function
+async function getListingDetails(listingId) {
+    try {
+        const response = await sparApiRequest(`/listings/${listingId}`);
+        
+        if (!response.D || !response.D.Results || response.D.Results.length === 0) {
+            throw new Error('No listing details found');
+        }
+
+        const fields = response.D.Results[0].StandardFields;
+        
+        return {
+            id: listingId,
+            address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
+            city: fields.City,
+            state: fields.StateOrProvince,
+            zip: fields.PostalCode,
+            price: fields.ListPrice,
+            beds: fields.BedsTotal,
+            baths: fields.BathroomsTotalInteger,
+            sqft: fields.BuildingAreaTotal,
+            agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
+            agentCell: fields.ListAgentMobilePhone,
+            agentEmail: fields.ListAgentEmail,
+            openHouse: fields.OpenHouse,
+            photoUrl: fields.Media?.[0]?.Uri300 || `${process.env.PUBLIC_WEBHOOK_URL || ''}/api/placeholder/300/200`,
+            status: fields.StandardStatus,
+            originalFields: fields
+        };
+    } catch (error) {
+        console.error(`Error fetching listing details for ${listingId}:`, error);
+        throw error;
+    }
+}
+
+// Polling function
 async function pollSparkAPI() {
     try {
         const timestamp = new Date().toISOString();
@@ -70,7 +160,7 @@ async function pollSparkAPI() {
     }
 }
 
-// Add diagnostic routes
+// Diagnostic route for force polling
 app.get('/force-poll', async (req, res) => {
     try {
         console.log('Manual polling triggered');
@@ -91,6 +181,7 @@ app.get('/force-poll', async (req, res) => {
     }
 });
 
+// Polling status route
 app.get('/polling-status', (req, res) => {
     res.json({
         isPollingEnabled: process.env.ENABLE_POLLING === 'true',
@@ -100,14 +191,25 @@ app.get('/polling-status', (req, res) => {
     });
 });
 
-// Update the polling interval to be more frequent during testing
-const POLLING_INTERVAL = 2 * 60 * 1000; // 2 minutes instead of 5
+// Existing test interface and test change routes from previous implementation would go here
+// (Include the routes from the previous monitor.js)
 
-// Start polling when server starts
-if (process.env.ENABLE_POLLING === 'true') {
-    console.log('Starting SparkAPI periodic polling...');
-    // Initial poll
-    pollSparkAPI();
-    // Set up regular polling
-    setInterval(pollSparkAPI, POLLING_INTERVAL);
-}
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    
+    // Start polling if enabled
+    if (process.env.ENABLE_POLLING === 'true') {
+        console.log('Starting SparkAPI periodic polling...');
+        // Initial poll
+        pollSparkAPI();
+        // Set up regular polling
+        setInterval(pollSparkAPI, POLLING_INTERVAL);
+    }
+});
+
+module.exports = { 
+    pollSparkAPI, 
+    sparApiRequest 
+};
