@@ -39,15 +39,6 @@ async function sendStatusChangeSlack(listingDetails, oldStatus, newStatus) {
                 }
             },
             {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
-            },
-            {
                 "type": "section",
                 "fields": [
                     {
@@ -94,15 +85,6 @@ async function sendPriceChangeSlack(listingDetails, oldPrice, newPrice) {
                 }
             },
             {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
-            },
-            {
                 "type": "section",
                 "fields": [
                     {
@@ -139,15 +121,6 @@ async function sendOpenHouseSlack(listingDetails, openHouse) {
                     "type": "plain_text",
                     "text": "📅 New Open House Alert!"
                 }
-            },
-            {
-                "type": "image",
-                "title": {
-                    "type": "plain_text",
-                    "text": listingDetails.address
-                },
-                "image_url": listingDetails.photoUrl,
-                "alt_text": "Property image"
             },
             {
                 "type": "section",
