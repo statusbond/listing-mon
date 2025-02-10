@@ -5,18 +5,67 @@ const { sendStatusChange, sendPriceChange, sendOpenHouse } = require('./notifica
 const app = express();
 app.use(express.json());
 
+// Spark API Configuration
 const SPARK_API_BASE_URL = 'https://sparkapi.com/v1';
 const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutes
-let lastPollTimestamp = null;
-let cachedListings = []; // Global cache for listings
+
+// Helper function to create secure API request
+async function sparApiRequest(endpoint, method = 'GET', body = null) {
+    const accessToken = process.env.SPARK_ACCESS_TOKEN;
+    
+    if (!accessToken) {
+        throw new Error('No SparkAPI access token provided');
+    }
+
+    const headers = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    };
+
+    const config = {
+        method,
+        headers
+    };
+
+    if (body) {
+        config.body = JSON.stringify(body);
+    }
+
+    const fullUrl = `${SPARK_API_BASE_URL}${endpoint}`;
+
+    try {
+        const response = await fetch(fullUrl, config);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`SparkAPI request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Detailed Spark API Error:', {
+            message: error.message,
+            endpoint: fullUrl,
+            method
+        });
+        throw error;
+    }
+}
 
 // Enhanced getListingDetails function
-async function getListingDetails(listingId, accessToken) {
-    // If no access token, try to use cached listings
-    const cachedListing = cachedListings.find(l => l.Id === listingId);
-    if (cachedListing) {
-        const fields = cachedListing.StandardFields;
+async function getListingDetails(listingId) {
+    try {
+        const response = await sparApiRequest(`/listings/${listingId}`);
+        
+        if (!response.D || !response.D.Results || response.D.Results.length === 0) {
+            throw new Error('No listing details found');
+        }
+
+        const fields = response.D.Results[0].StandardFields;
+        
         return {
+            id: listingId,
             address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
             city: fields.City,
             state: fields.StateOrProvince,
@@ -30,99 +79,64 @@ async function getListingDetails(listingId, accessToken) {
             agentEmail: fields.ListAgentEmail,
             openHouse: fields.OpenHouse,
             photoUrl: fields.Media?.[0]?.Uri300 || `${process.env.PUBLIC_WEBHOOK_URL || ''}/api/placeholder/300/200`,
-            status: fields.StandardStatus
+            status: fields.StandardStatus,
+            originalFields: fields
         };
+    } catch (error) {
+        console.error(`Error fetching listing details for ${listingId}:`, error);
+        throw error;
     }
-
-    // If not in cache, fetch from API
-    if (accessToken) {
-        try {
-            const response = await fetch(`${SPARK_API_BASE_URL}/listings/${listingId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`Listing fetch failed: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const fields = data.D.Results[0].StandardFields;
-            
-            return {
-                address: `${fields.StreetNumber} ${fields.StreetName} ${fields.StreetSuffix || ''}`,
-                city: fields.City,
-                state: fields.StateOrProvince,
-                zip: fields.PostalCode,
-                price: fields.ListPrice,
-                beds: fields.BedsTotal,
-                baths: fields.BathroomsTotalInteger,
-                sqft: fields.BuildingAreaTotal,
-                agent: `${fields.ListAgentFirstName} ${fields.ListAgentLastName}`,
-                agentCell: fields.ListAgentMobilePhone,
-                agentEmail: fields.ListAgentEmail,
-                openHouse: fields.OpenHouse,
-                photoUrl: fields.Media?.[0]?.Uri300 || `${process.env.PUBLIC_WEBHOOK_URL || ''}/api/placeholder/300/200`,
-                status: fields.StandardStatus
-            };
-        } catch (error) {
-            console.error(`Error fetching listing details for ${listingId}:`, error);
-            throw error;
-        }
-    }
-
-    throw new Error('No access token or cached listing found');
 }
 
 // Fetch listings from Spark API
-async function fetchSparkListings(accessToken, limit = 10) {
+async function fetchSparkListings(limit = 10) {
     try {
         const params = new URLSearchParams({
             '$top': String(limit),
             '$select': 'ListingId,StandardFields'
         });
 
-        const response = await fetch(`${SPARK_API_BASE_URL}/listings?${params}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`SparkAPI request failed: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-
-        const data = await response.json();
+        const response = await sparApiRequest(`/listings?${params}`);
         
-        // Cache the listings globally
-        cachedListings = data.D.Results;
-
-        return cachedListings;
+        return response.D.Results;
     } catch (error) {
         console.error('Error fetching listings:', error);
         throw error;
     }
 }
 
+// Diagnostic route for API configuration
+app.get('/api-diagnostics', async (req, res) => {
+    try {
+        const accessTokenProvided = !!process.env.SPARK_ACCESS_TOKEN;
+        
+        let apiTest = null;
+        try {
+            apiTest = await sparApiRequest('/listings?$top=1');
+        } catch (error) {
+            apiTest = { error: error.message };
+        }
+
+        res.json({
+            accessTokenProvided,
+            accessTokenLength: process.env.SPARK_ACCESS_TOKEN?.length || 0,
+            apiBaseUrl: SPARK_API_BASE_URL,
+            enablePolling: process.env.ENABLE_POLLING,
+            apiTestResult: apiTest ? 'Successful' : 'Failed',
+            apiTestDetails: apiTest
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            error: 'Diagnostics failed',
+            details: error.message 
+        });
+    }
+});
+
 // Test Spark API route
 app.get('/test-spark-api', async (req, res) => {
     try {
-        const accessToken = process.env.SPARK_ACCESS_TOKEN;
-        
-        if (!accessToken) {
-            return res.status(400).json({ 
-                error: 'No SparkAPI access token provided',
-                message: 'Please set SPARK_ACCESS_TOKEN in your environment variables'
-            });
-        }
-
-        const listings = await fetchSparkListings(accessToken);
+        const listings = await fetchSparkListings();
 
         res.json({
             totalResults: listings.length,
@@ -148,13 +162,7 @@ app.get('/test-spark-api', async (req, res) => {
 // Dynamic Test Interface route
 app.get('/test-interface', async (req, res) => {
     try {
-        const accessToken = process.env.SPARK_ACCESS_TOKEN;
-        
-        if (!accessToken) {
-            return res.status(400).send('No SparkAPI access token provided');
-        }
-
-        const listings = await fetchSparkListings(accessToken);
+        const listings = await fetchSparkListings();
 
         res.send(`
             <html>
@@ -211,14 +219,8 @@ app.post('/test-change', async (req, res) => {
     const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
     
     try {
-        const accessToken = process.env.SPARK_ACCESS_TOKEN;
-        
-        if (!accessToken) {
-            return res.status(400).json({ error: 'No SparkAPI access token provided' });
-        }
-
         // Fetch listing details
-        const listingDetails = await getListingDetails(listingId, accessToken);
+        const listingDetails = await getListingDetails(listingId);
         
         switch (type) {
             case 'StatusChange':
@@ -236,19 +238,13 @@ app.post('/test-change', async (req, res) => {
     }
 });
 
-// Periodic polling function (placeholder)
+// Periodic polling function
 async function pollSparkAPI() {
     try {
         console.log('Polling SparkAPI for listing changes...');
-        const accessToken = process.env.SPARK_ACCESS_TOKEN;
-        
-        if (!accessToken) {
-            console.error('No SparkAPI access token provided');
-            return;
-        }
 
-        // Fetch and process changes
-        const changedListings = await fetchSparkListings(accessToken);
+        // Fetch and log listings
+        const changedListings = await fetchSparkListings();
         
         console.log(`Found ${changedListings.length} listings`);
     } catch (error) {
@@ -273,4 +269,8 @@ app.listen(PORT, () => {
     }
 });
 
-module.exports = { pollSparkAPI, fetchSparkListings };
+module.exports = { 
+    pollSparkAPI, 
+    fetchSparkListings,
+    sparApiRequest 
+};
