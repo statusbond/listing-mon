@@ -4,6 +4,15 @@ const {
     sendOpenHouseSlack 
 } = require('./slack');
 
+async function handleListingChange(notification) {
+    console.log("Processing listing change:", JSON.stringify(notification, null, 2));
+    // Add the logic to handle different listing changes
+}
+
+module.exports = {
+    handleListingChange
+};
+
 async function sendStatusChange(listingDetails, oldStatus, newStatus) {
     try {
         await sendStatusChangeSlack(listingDetails, oldStatus, newStatus);
