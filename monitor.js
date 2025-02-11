@@ -99,14 +99,32 @@ async function initializeListingStates() {
     try {
         console.log('Initializing complete listing states...');
         
-        // Fetch ALL active and pending listings without a top limit
-        const params = new URLSearchParams({
-            '$filter': 'StandardStatus eq \'Active\' or StandardStatus eq \'Pending\'', 
-            '$select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,OpenHouse,StandardFields'
-        });
+        let allListings = [];
+        let page = 1;
+        const pageSize = 100; // Adjust based on API limits
+        let hasMoreListings = true;
 
-        const response = await sparApiRequest(`/listings?${params}`);
-        const allListings = response.D.Results;
+        while (hasMoreListings) {
+            const params = new URLSearchParams({
+                '$filter': 'StandardStatus eq \'Active\' or StandardStatus eq \'Pending\'',
+                '$select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,OpenHouse,StandardFields',
+                '$top': pageSize.toString(),
+                '$skip': ((page - 1) * pageSize).toString()
+            });
+
+            const response = await sparApiRequest(`/listings?${params}`);
+            const currentPageListings = response.D.Results;
+
+            allListings = allListings.concat(currentPageListings);
+
+            // Check if we've fetched all listings
+            if (currentPageListings.length < pageSize) {
+                hasMoreListings = false;
+            }
+
+            console.log(`Fetched page ${page}, total listings so far: ${allListings.length}`);
+            page++;
+        }
 
         console.log(`Discovered ${allListings.length} total active/pending listings`);
 
