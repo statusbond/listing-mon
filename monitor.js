@@ -5,9 +5,9 @@ const { handleListingChange } = require('./notifications');
 const app = express();
 app.use(bodyParser.json());
 
-// GET route for the root (for a simple welcome message)
+// GET route for the root (simple status message)
 app.get('/', (req, res) => {
-  res.send('Service is running. Use POST /listing-change to send listing data or GET /test to send a test message to Slack.');
+  res.send('Service is running. Use POST /listing-change to send listing data or GET /test to send a formatted test message to Slack.');
 });
 
 // POST endpoint to handle listing changes from an external source
@@ -23,14 +23,19 @@ app.post('/listing-change', (req, res) => {
   }
 });
 
-// GET endpoint for testing the Slack notification
+// GET endpoint for testing the formatted Slack notification
 app.get('/test', (req, res) => {
-  // Create sample test data
-  const testListing = { title: "Test Listing from /test endpoint" };
+  // Create a sample test listing with extra details
+  const testListing = {
+    title: "Test Listing",
+    price: "$500,000",
+    address: "123 Test St, Test City, Test Country",
+    description: "This is a sample test listing to check the Slack formatting. Contact the agent for more details."
+  };
   
   try {
     handleListingChange(testListing);
-    res.send("Test message sent to Slack. Check your Slack channel!");
+    res.send("Test formatted message sent to Slack. Check your Slack channel!");
   } catch (error) {
     console.error("Error sending test message:", error);
     res.status(500).send("Error sending test message to Slack.");
