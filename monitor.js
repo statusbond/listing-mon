@@ -199,36 +199,55 @@ async function pollSparkAPI() {
                 continue;
             }
 
-            // More flexible change detection
+            // Extremely verbose logging for debugging
+            console.log(`Examining Listing ${listingId}:`);
+            console.log('Previous State:', JSON.stringify(previousState));
+            console.log('Current State:', JSON.stringify(currentState));
+
+            // Detailed change detection
             const stateChanged = 
                 previousState.status !== currentState.status ||
                 previousState.price !== currentState.price ||
-                JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse);
+                previousState.modificationTimestamp !== currentState.modificationTimestamp;
 
-            if (stateChanged) {
+            const openHouseChanged = 
+                (!previousState.openHouse && currentState.openHouse) || 
+                (previousState.openHouse && currentState.openHouse && 
+                 JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse));
+
+            if (stateChanged || openHouseChanged) {
                 changesDetected = true;
                 console.log(`[SIGNIFICANT CHANGE] Listing ${listingId}`);
                 
+                if (stateChanged) {
+                    console.log('State change detected:', {
+                        previousStatus: previousState.status,
+                        currentStatus: currentState.status,
+                        previousPrice: previousState.price,
+                        currentPrice: currentState.price,
+                        previousTimestamp: previousState.modificationTimestamp,
+                        currentTimestamp: currentState.modificationTimestamp
+                    });
+                }
+
+                if (openHouseChanged) {
+                    console.log('Open House change detected');
+                    console.log('Previous Open House:', previousState.openHouse);
+                    console.log('Current Open House:', currentState.openHouse);
+                }
+
+                // Fetch and send notifications
+                const listingDetails = await getListingDetails(listingId);
+
                 if (previousState.status !== currentState.status) {
-                    console.log(`Status change: ${previousState.status} → ${currentState.status}`);
-                    const listingDetails = await getListingDetails(listingId);
                     await sendStatusChange(listingDetails, previousState.status, currentState.status);
                 }
 
                 if (previousState.price !== currentState.price) {
-                    console.log(`Price change: ${previousState.price} → ${currentState.price}`);
-                    const listingDetails = await getListingDetails(listingId);
                     await sendPriceChange(listingDetails, previousState.price, currentState.price);
                 }
 
-                const hasNewOpenHouse = 
-                    (!previousState.openHouse && currentState.openHouse) || 
-                    (previousState.openHouse && currentState.openHouse && 
-                     JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse));
-
-                if (hasNewOpenHouse) {
-                    console.log(`Open House change detected for ${listingId}`);
-                    const listingDetails = await getListingDetails(listingId);
+                if (openHouseChanged) {
                     await sendOpenHouse(listingDetails, currentState.openHouse);
                 }
 
