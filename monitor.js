@@ -7,13 +7,32 @@ app.use(express.json());
 
 const SPARK_API_BASE = "https://replication.sparkapi.com/v1";
 
-const { handleListingChange } = require('./notifications/index');
-
 const getSparkHeaders = () => ({
     'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
     'Accept': 'application/json',
     'Content-Type': 'application/json'
 });
+
+async function fetchTestListings() {
+    try {
+        console.log("Fetching test listings...");
+        const response = await fetch(`${SPARK_API_BASE}/listings?_limit=5`, {
+            headers: getSparkHeaders()
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API request failed: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        console.log("Fetched listings:", JSON.stringify(data, null, 2));
+        return data.D.Results || [];
+    } catch (error) {
+        console.error('Error fetching test listings:', error);
+        return [];
+    }
+}
 
 async function testSparkAPI() {
     try {
@@ -42,6 +61,8 @@ app.get('/', (req, res) => {
 });
 
 app.get('/test-interface', async (req, res) => {
+    const listings = await fetchTestListings();
+
     res.send(`
         <html>
         <head>
@@ -55,55 +76,37 @@ app.get('/test-interface', async (req, res) => {
         <body>
             <h1>Test Interface</h1>
             <p>Click a button below to simulate a listing change event.</p>
-            <button onclick="fetch('/test-change', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    listingId: '12345',
-                    type: 'StatusChange',
-                    oldStatus: 'Active',
-                    newStatus: 'Pending'
-                })
-            })">Change to Pending</button>
-
-            <button onclick="fetch('/test-change', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    listingId: '12345',
-                    type: 'PriceChange',
-                    oldPrice: 500000,
-                    newPrice: 475000
-                })
-            })">Reduce Price 5%</button>
+            ${listings.length > 0 ? listings.map(listing => `
+                <div class="listing">
+                    <h3>${listing.StandardFields?.StreetNumber || ''} ${listing.StandardFields?.StreetName || ''} 
+                        ${listing.StandardFields?.StreetSuffix || ''}</h3>
+                    <p>Current Price: $${listing.StandardFields?.ListPrice?.toLocaleString() || 'N/A'}</p>
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'StatusChange',
+                            oldStatus: '${listing.StandardFields?.StandardStatus || 'Unknown'}',
+                            newStatus: 'Pending'
+                        })
+                    })">Change to Pending</button>
+                    
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'PriceChange',
+                            oldPrice: ${listing.StandardFields?.ListPrice || 0},
+                            newPrice: ${Math.round((listing.StandardFields?.ListPrice || 0) * 0.95)}
+                        })
+                    })">Reduce Price 5%</button>
+                </div>
+            `).join('') : '<p>No listings found.</p>'}
         </body>
         </html>
     `);
-});
-
-app.post('/test-change', async (req, res) => {
-    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
-
-    const webhookPayload = {
-        Listing: { Id: listingId },
-        NewsFeed: { Event: type, EventTimestamp: new Date().toISOString() }
-    };
-
-    if (type === 'StatusChange') {
-        webhookPayload.OldStatus = oldStatus;
-        webhookPayload.NewStatus = newStatus;
-    } else if (type === 'PriceChange') {
-        webhookPayload.OldPrice = oldPrice;
-        webhookPayload.NewPrice = newPrice;
-    }
-
-    try {
-        await handleListingChange(webhookPayload);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Error processing test change:', error);
-        res.status(500).json({ error: 'Failed to process change' });
-    }
 });
 
 const PORT = process.env.PORT || 3000;
