@@ -100,30 +100,34 @@ async function initializeListingStates() {
         console.log('Initializing complete listing states...');
         
         let allListings = [];
-        let page = 1;
-        const pageSize = 100; // Adjust based on API limits
+        let skipToken = '';
         let hasMoreListings = true;
 
         while (hasMoreListings) {
+            // Construct the URL with _skiptoken and _limit
             const params = new URLSearchParams({
-                '$filter': 'StandardStatus eq \'Active\' or StandardStatus eq \'Pending\'',
-                '$select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,OpenHouse,StandardFields',
-                '$top': pageSize.toString(),
-                '$skip': ((page - 1) * pageSize).toString()
+                '_limit': '1000',
+                '_skiptoken': skipToken,
+                '_filter': 'StandardStatus eq \'Active\' or StandardStatus eq \'Pending\'',
+                '_select': 'ListingId,StandardStatus,ListPrice,ModificationTimestamp,OpenHouse,StandardFields'
             });
 
             const response = await sparApiRequest(`/listings?${params}`);
             const currentPageListings = response.D.Results;
 
+            // Accumulate listings
             allListings = allListings.concat(currentPageListings);
 
-            // Check if we've fetched all listings
-            if (currentPageListings.length < pageSize) {
-                hasMoreListings = false;
-            }
+            // Get the next skipToken
+            skipToken = response.D.NextSkipToken || '';
 
-            console.log(`Fetched page ${page}, total listings so far: ${allListings.length}`);
-            page++;
+            // Determine if there are more listings
+            hasMoreListings = skipToken !== '';
+
+            console.log(`Fetched page, total listings so far: ${allListings.length}`);
+            
+            // Prevent infinite loop if something goes wrong
+            if (!skipToken) break;
         }
 
         console.log(`Discovered ${allListings.length} total active/pending listings`);
