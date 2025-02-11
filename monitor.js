@@ -62,30 +62,44 @@ app.get('/test-api', async (req, res) => {
 
 // GET endpoint for testing the formatted Slack notification using data from the Spark API
 app.get('/test-spark', async (req, res) => {
-  // Construct the API URL using your provided Spark API endpoint.
-  // Adjust the listing ID ('123') as needed.
-  const sparkApiUrl = 'https://replication.sparkapi.com/listings/123';
-  
+  // Use the RESO OData endpoint for all properties.
+  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property';
+
   try {
-    const response = await axios.get(sparkApiUrl);
-    const sparkListingData = response.data;
-    
-    // Map the Spark API fields to the fields expected by handleListingChange.
-    // If the Spark API returns different property names, adjust this mapping accordingly.
+    const response = await axios.get(sparkApiUrl, {
+      headers: {
+        'User-Agent': 'MySparkClient/1.0',  // Replace with your client identifier if needed
+        'Accept': 'application/json'
+      }
+    });
+
+    // Assuming the response data is in OData format with a "value" array.
+    const properties = response.data.value;
+    if (!properties || properties.length === 0) {
+      return res.status(404).send("No property data found from Spark API.");
+    }
+
+    // Select the first property for testing.
+    const property = properties[0];
+
+    // Map fields from the property to the format expected by your Slack notification.
+    // Adjust these field names based on the actual RESO API response.
     const listingDetails = {
-      title: sparkListingData.listing_title || sparkListingData.title,
-      price: sparkListingData.listing_price || sparkListingData.price,
-      address: sparkListingData.listing_address || sparkListingData.address,
-      description: sparkListingData.listing_description || sparkListingData.description
+      title: property.PropertyType || "Property",  // Use a relevant title field
+      price: property.ListPrice ? `$${property.ListPrice}` : "N/A",
+      address: `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''} ${property.PostalCode || ''}`.trim(),
+      description: property.PublicRemarks || "No description available."
     };
 
+    // Send the formatted listing details to Slack.
     handleListingChange(listingDetails);
     res.send("Test message sent to Slack using Spark API data. Check your Slack channel!");
   } catch (error) {
-    console.error("Error fetching listing data from Spark API:", error);
-    res.status(500).send("Error fetching listing data from Spark API.");
+    console.error("Error fetching property data from Spark API:", error.message);
+    res.status(500).send("Error fetching property data from Spark API.");
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 
