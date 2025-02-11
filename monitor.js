@@ -159,9 +159,9 @@ async function pollSparkAPI() {
         let allListings = [];
         let skipToken = '';
         let hasMoreListings = true;
+        let changesDetected = false;
 
         while (hasMoreListings) {
-            // Construct the URL with _skiptoken and _limit
             const params = new URLSearchParams({
                 '_limit': '1000',
                 '_skiptoken': skipToken,
@@ -172,26 +172,73 @@ async function pollSparkAPI() {
             const response = await sparApiRequest(`/listings?${params}`);
             const currentPageListings = response.D.Results;
 
-            // Accumulate listings
             allListings = allListings.concat(currentPageListings);
 
-            // Get the next skipToken
             skipToken = response.D.NextSkipToken || '';
-
-            // Determine if there are more listings
             hasMoreListings = skipToken !== '';
 
-            console.log(`Fetched page, total listings so far: ${allListings.length}`);
-            
-            // Prevent infinite loop if something goes wrong
             if (!skipToken) break;
         }
 
         console.log(`[${timestamp}] Fetched ${allListings.length} active/pending listings`);
 
-        // Existing change detection logic remains the same
         for (const listing of allListings) {
-            // ... (rest of the existing change detection code)
+            const listingId = listing.Id;
+            const currentState = {
+                status: listing.StandardFields.StandardStatus,
+                price: listing.StandardFields.ListPrice,
+                modificationTimestamp: listing.StandardFields.ModificationTimestamp,
+                openHouse: listing.StandardFields.OpenHouse
+            };
+
+            const previousState = previousListingStates.get(listingId);
+
+            if (!previousState) {
+                // First time seeing this listing
+                previousListingStates.set(listingId, currentState);
+                continue;
+            }
+
+            // More flexible change detection
+            const stateChanged = 
+                previousState.status !== currentState.status ||
+                previousState.price !== currentState.price ||
+                JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse);
+
+            if (stateChanged) {
+                changesDetected = true;
+                console.log(`[SIGNIFICANT CHANGE] Listing ${listingId}`);
+                
+                if (previousState.status !== currentState.status) {
+                    console.log(`Status change: ${previousState.status} → ${currentState.status}`);
+                    const listingDetails = await getListingDetails(listingId);
+                    await sendStatusChange(listingDetails, previousState.status, currentState.status);
+                }
+
+                if (previousState.price !== currentState.price) {
+                    console.log(`Price change: ${previousState.price} → ${currentState.price}`);
+                    const listingDetails = await getListingDetails(listingId);
+                    await sendPriceChange(listingDetails, previousState.price, currentState.price);
+                }
+
+                const hasNewOpenHouse = 
+                    (!previousState.openHouse && currentState.openHouse) || 
+                    (previousState.openHouse && currentState.openHouse && 
+                     JSON.stringify(previousState.openHouse) !== JSON.stringify(currentState.openHouse));
+
+                if (hasNewOpenHouse) {
+                    console.log(`Open House change detected for ${listingId}`);
+                    const listingDetails = await getListingDetails(listingId);
+                    await sendOpenHouse(listingDetails, currentState.openHouse);
+                }
+
+                // Update the stored state
+                previousListingStates.set(listingId, currentState);
+            }
+        }
+
+        if (!changesDetected) {
+            console.log(`[${timestamp}] No significant changes detected in any listings`);
         }
 
         console.log(`[${timestamp}] Polling cycle completed`);
