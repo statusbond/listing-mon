@@ -9,10 +9,6 @@ async function handleListingChange(notification) {
     // Add the logic to handle different listing changes
 }
 
-module.exports = {
-    handleListingChange
-};
-
 async function sendStatusChange(listingDetails, oldStatus, newStatus) {
     try {
         await sendStatusChangeSlack(listingDetails, oldStatus, newStatus);
@@ -37,7 +33,9 @@ async function sendOpenHouse(listingDetails, openHouse) {
     }
 }
 
+// ✅ Correctly export ALL functions
 module.exports = {
+    handleListingChange,
     sendStatusChange,
     sendPriceChange,
     sendOpenHouse
