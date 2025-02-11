@@ -109,6 +109,33 @@ app.get('/test-interface', async (req, res) => {
     `);
 });
 
+app.post('/test-change', async (req, res) => {
+    console.log("Received test-change request:", JSON.stringify(req.body, null, 2));
+    
+    const { listingId, type, oldStatus, newStatus, oldPrice, newPrice } = req.body;
+
+    const webhookPayload = {
+        Listing: { Id: listingId },
+        NewsFeed: { Event: type, EventTimestamp: new Date().toISOString() }
+    };
+
+    if (type === 'StatusChange') {
+        webhookPayload.OldStatus = oldStatus;
+        webhookPayload.NewStatus = newStatus;
+    } else if (type === 'PriceChange') {
+        webhookPayload.OldPrice = oldPrice;
+        webhookPayload.NewPrice = newPrice;
+    }
+
+    try {
+        await handleListingChange(webhookPayload);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error processing test change:', error);
+        res.status(500).json({ error: 'Failed to process change' });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
