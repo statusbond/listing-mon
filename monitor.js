@@ -7,7 +7,7 @@ app.use(express.json());
 
 const SPARK_API_BASE = "https://replication.sparkapi.com/v1";
 
-const { handleListingChange } = require('./index');
+const { handleListingChange } = require('./notifications/index');
 
 const getSparkHeaders = () => ({
     'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
