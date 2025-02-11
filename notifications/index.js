@@ -4,8 +4,6 @@ const {
     sendOpenHouseSlack 
 } = require('./slack');
 
-const { getListingDetails } = require('../notifications/index');
-
 async function handleListingChange(notification) {
     console.log("Processing listing change:", JSON.stringify(notification, null, 2));
     
