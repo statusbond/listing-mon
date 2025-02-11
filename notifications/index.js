@@ -4,9 +4,26 @@ const {
     sendOpenHouseSlack 
 } = require('./slack');
 
+const { getListingDetails } = require('./notifications'); // Ensure this function exists
+
 async function handleListingChange(notification) {
     console.log("Processing listing change:", JSON.stringify(notification, null, 2));
-    // Add the logic to handle different listing changes
+
+    const listingDetails = await getListingDetails(notification.Listing.Id);
+    
+    if (!listingDetails) {
+        console.error("Failed to fetch listing details, skipping Slack notification.");
+        return;
+    }
+
+    if (notification.NewsFeed.Event === 'StatusChange') {
+        console.log("Triggering sendStatusChange...");
+        await sendStatusChange(
+            listingDetails,
+            notification.OldStatus,
+            notification.NewStatus
+        );
+    }
 }
 
 async function sendStatusChange(listingDetails, oldStatus, newStatus) {
@@ -33,7 +50,6 @@ async function sendOpenHouse(listingDetails, openHouse) {
     }
 }
 
-// ✅ Correctly export ALL functions
 module.exports = {
     handleListingChange,
     sendStatusChange,
