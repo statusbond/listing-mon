@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const { handleListingChange } = require('./notifications/index');
-const { sendStatusChange, sendPriceChange, sendOpenHouse } = require('./notifications/index');
 
 const app = express();
 app.use(express.json());
