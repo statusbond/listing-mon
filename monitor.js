@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const axios = require('axios');
 const { handleListingChange } = require('./notifications');
 
 const app = express();
@@ -7,7 +8,9 @@ app.use(bodyParser.json());
 
 // GET route for the root (simple status message)
 app.get('/', (req, res) => {
-  res.send('Service is running. Use POST /listing-change to send listing data or GET /test to send a formatted test message to Slack.');
+  res.send(
+    'Service is running. Use POST /listing-change to send listing data, GET /test for sample data, GET /test-api for a generic API test, or GET /test-spark to send a test message using Spark API data.'
+  );
 });
 
 // POST endpoint to handle listing changes from an external source
@@ -23,9 +26,8 @@ app.post('/listing-change', (req, res) => {
   }
 });
 
-// GET endpoint for testing the formatted Slack notification
+// GET endpoint for testing the formatted Slack notification with sample data
 app.get('/test', (req, res) => {
-  // Create a sample test listing with extra details
   const testListing = {
     title: "Test Listing",
     price: "$500,000",
@@ -35,10 +37,53 @@ app.get('/test', (req, res) => {
   
   try {
     handleListingChange(testListing);
-    res.send("Test formatted message sent to Slack. Check your Slack channel!");
+    res.send("Test formatted message sent to Slack using sample data. Check your Slack channel!");
   } catch (error) {
     console.error("Error sending test message:", error);
     res.status(500).send("Error sending test message to Slack.");
+  }
+});
+
+// GET endpoint for testing the formatted Slack notification using data from a generic API
+app.get('/test-api', async (req, res) => {
+  // Replace with your actual API endpoint if needed
+  const apiUrl = 'https://api.example.com/listings/123';
+  
+  try {
+    const response = await axios.get(apiUrl);
+    const listingData = response.data;
+    handleListingChange(listingData);
+    res.send("Test message sent to Slack using API data. Check your Slack channel!");
+  } catch (error) {
+    console.error("Error fetching listing data from API:", error);
+    res.status(500).send("Error fetching listing data from API.");
+  }
+});
+
+// GET endpoint for testing the formatted Slack notification using data from the Spark API
+app.get('/test-spark', async (req, res) => {
+  // Construct the API URL using your provided Spark API endpoint.
+  // Adjust the listing ID ('123') as needed.
+  const sparkApiUrl = 'https://replication.sparkapi.com/listings/123';
+  
+  try {
+    const response = await axios.get(sparkApiUrl);
+    const sparkListingData = response.data;
+    
+    // Map the Spark API fields to the fields expected by handleListingChange.
+    // If the Spark API returns different property names, adjust this mapping accordingly.
+    const listingDetails = {
+      title: sparkListingData.listing_title || sparkListingData.title,
+      price: sparkListingData.listing_price || sparkListingData.price,
+      address: sparkListingData.listing_address || sparkListingData.address,
+      description: sparkListingData.listing_description || sparkListingData.description
+    };
+
+    handleListingChange(listingDetails);
+    res.send("Test message sent to Slack using Spark API data. Check your Slack channel!");
+  } catch (error) {
+    console.error("Error fetching listing data from Spark API:", error);
+    res.status(500).send("Error fetching listing data from Spark API.");
   }
 });
 
