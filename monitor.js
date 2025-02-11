@@ -35,6 +35,10 @@ async function testSparkAPI() {
     }
 }
 
+app.get('/', (req, res) => {
+    res.send('<h1>Listing Status Monitor is Running 🚀</h1>');
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
