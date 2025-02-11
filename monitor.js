@@ -88,6 +88,57 @@ app.post('/test-change', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+app.get('/test-interface', async (req, res) => {
+    const listings = await fetchTestListings();
+
+    res.send(`
+        <html>
+        <head>
+            <title>Listing Status Test Interface</title>
+            <style>
+                body { font-family: Arial; padding: 20px; }
+                .listing { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+                button { margin: 5px; padding: 5px 10px; }
+            </style>
+        </head>
+        <body>
+            <h1>Test Interface</h1>
+            <p>Click a button below to simulate a listing change event.</p>
+
+            ${listings.length > 0 ? listings.map(listing => `
+                <div class="listing">
+                    <h3>${listing.StandardFields?.StreetNumber || ''} ${listing.StandardFields?.StreetName || ''} 
+                        ${listing.StandardFields?.StreetSuffix || ''}</h3>
+                    <p>Current Price: $${listing.StandardFields?.ListPrice?.toLocaleString() || 'N/A'}</p>
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'StatusChange',
+                            oldStatus: '${listing.StandardFields?.StandardStatus || 'Unknown'}',
+                            newStatus: 'Pending'
+                        })
+                    })">Change to Pending</button>
+                    
+                    <button onclick="fetch('/test-change', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            listingId: '${listing.Id}',
+                            type: 'PriceChange',
+                            oldPrice: ${listing.StandardFields?.ListPrice || 0},
+                            newPrice: ${Math.round((listing.StandardFields?.ListPrice || 0) * 0.95)}
+                        })
+                    })">Reduce Price 5%</button>
+                </div>
+            `).join('') : '<p>No listings found.</p>'}
+        </body>
+        </html>
+    `);
+});
+
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     const apiTest = await testSparkAPI();
