@@ -12,6 +12,13 @@ const POLL_CONFIG = {
     maxRequestsPerPoll: 10
 };
 
+// Spark API headers configuration
+const getSparkHeaders = () => ({
+    'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+});
+
 // Error logging utility
 function logAPIError(error, context, data = null) {
     const errorLog = {
@@ -44,14 +51,12 @@ function formatAddress(listing) {
 async function fetchTestListings() {
     try {
         const response = await fetch('https://sparkapi.com/v1/listings?_limit=5', {
-            headers: {
-                'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getSparkHeaders()
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.status}`);
+            const errorText = await response.text();
+            throw new Error(`API request failed: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
@@ -66,16 +71,22 @@ async function fetchTestListings() {
 async function testSparkAPI() {
     try {
         console.log('Testing Spark API connection...');
+        console.log('Access Token Present:', !!process.env.SPARK_ACCESS_TOKEN);
+        
+        const headers = getSparkHeaders();
+        console.log('Request Headers:', {
+            ...headers,
+            'Authorization': headers.Authorization ? 'Bearer [REDACTED]' : undefined
+        });
         
         const response = await fetch('https://sparkapi.com/v1/listings?_limit=1', {
-            headers: {
-                'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
+            headers
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.status}`);
+            const errorText = await response.text();
+            console.log('Error Response:', errorText);
+            throw new Error(`API request failed: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
@@ -125,15 +136,12 @@ async function getListingDetails(listingId) {
         console.log(`Fetching details for listing: ${listingId}`);
 
         const response = await fetch(`https://sparkapi.com/v1/listings/${listingId}`, {
-            headers: {
-                'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getSparkHeaders()
         });
 
         if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`API request failed: ${response.status} - ${errorBody}`);
+            const errorText = await response.text();
+            throw new Error(`API request failed: ${response.status} - ${errorText}`);
         }
         
         const data = await response.json();
@@ -289,15 +297,13 @@ async function checkForChanges(sinceTimestamp) {
                 `_limit=${POLL_CONFIG.batchSize}&` +
                 `_offset=${offset}`,
                 {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
+                    headers: getSparkHeaders()
                 }
             );
 
             if (!response.ok) {
-                throw new Error(`API request failed: ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`API request failed: ${response.status} - ${errorText}`);
             }
 
             const data = await response.json();
