@@ -8,8 +8,6 @@ const { getListingDetails } = require('../notifications/index');
 
 async function handleListingChange(notification) {
     console.log("Processing listing change:", JSON.stringify(notification, null, 2));
-
-    const listingDetails = await getListingDetails(notification.Listing.Id);
     
     if (!listingDetails) {
         console.error("Failed to fetch listing details, skipping Slack notification.");
