@@ -14,8 +14,8 @@ function handleListingChange(listingDetails) {
           type: "mrkdwn",
           text: `🏡 *STATUS CHANGE*\n` + 
                 `${listingDetails.address}\n` +
-                `${listingDetails.previousStatus} → ${listingDetails.newStatus}\n` +
                 `${listingDetails.price}\n` +
+                `${listingDetails.previousStatus} → ${listingDetails.newStatus}\n` +
                 `${listingDetails.agentName}\n` +
                 `Cell: ${listingDetails.agentPhone}`
         }
