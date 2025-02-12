@@ -2,23 +2,22 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const { handleListingChange } = require('./notifications');
+const { getPreviousStatus, saveStatus } = require('./helpers/statusTracker');
 
 const app = express();
 app.use(bodyParser.json());
 
-// GET route for root status
+// Root Status Route
 app.get('/', (req, res) => {
   res.send(
-    'Service is running. Use POST /listing-change to send listing data, GET /test for sample data, or GET /test-spark to fetch and send a listing from Spark API.'
+    'Service is running. Use POST /listing-change to send listing data, GET /test-spark to check for live listing status changes.'
   );
 });
 
-// POST endpoint for external listing change events
+// POST route to manually test listing changes
 app.post('/listing-change', (req, res) => {
-  const listingDetails = req.body;
-
   try {
-    handleListingChange(listingDetails);
+    handleListingChange(req.body);
     res.status(200).send("Listing change processed successfully.");
   } catch (error) {
     console.error("Error processing listing change:", error);
@@ -26,34 +25,16 @@ app.post('/listing-change', (req, res) => {
   }
 });
 
-// GET endpoint to send a sample test message to Slack
-app.get('/test', (req, res) => {
-  const testListing = {
-    title: "Test Listing",
-    price: "$500,000",
-    address: "123 Test St, Test City, Test Country",
-    description: "This is a sample test listing to check Slack formatting."
-  };
-
-  try {
-    handleListingChange(testListing);
-    res.send("Test message sent to Slack using sample data. Check your Slack channel!");
-  } catch (error) {
-    console.error("Error sending test message:", error);
-    res.status(500).send("Error sending test message to Slack.");
-  }
-});
-
-// GET endpoint to fetch a live listing from Spark API and send it to Slack
+// GET route to check for listing status changes
 app.get('/test-spark', async (req, res) => {
-  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property';
+  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=ModificationTimestamp desc&$top=5';
 
   try {
     const response = await axios.get(sparkApiUrl, {
       headers: {
-        'User-Agent': 'MySparkClient/1.0',  // Replace if needed
+        'User-Agent': 'MySparkClient/1.0',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`  // Using stored Spark Access Token
+        'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`
       }
     });
 
@@ -62,17 +43,33 @@ app.get('/test-spark', async (req, res) => {
       return res.status(404).send("No property data found from Spark API.");
     }
 
-    const property = properties[0]; // Fetch first available property for testing
+    for (const property of properties) {
+      const listingId = property.ListingId;
+      const newStatus = property.StandardStatus;
+      const previousStatus = await getPreviousStatus(listingId);
 
-    const listingDetails = {
-      title: property.PropertyType || "Property",
-      price: property.ListPrice ? `$${property.ListPrice}` : "N/A",
-      address: `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''} ${property.PostalCode || ''}`.trim(),
-      description: property.PublicRemarks || "No description available."
-    };
+      if (newStatus !== previousStatus) {
+        // Extract Listing Agent Info
+        const agentName = property.ListAgentFullName || "Unknown Agent";
+        const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
 
-    handleListingChange(listingDetails);
-    res.send("Test message sent to Slack using Spark API data. Check your Slack channel!");
+        const listingDetails = {
+          title: `Listing Status Change`,
+          price: property.ListPrice ? `$${property.ListPrice}` : "N/A",
+          address: `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''} ${property.PostalCode || ''}`.trim(),
+          description: property.PublicRemarks || "No description available.",
+          newStatus: newStatus,
+          previousStatus: previousStatus,
+          agentName: agentName,
+          agentPhone: agentPhone
+        };
+
+        await saveStatus(listingId, newStatus);
+        handleListingChange(listingDetails);
+      }
+    }
+
+    res.send("Checked for status changes. If any were found, messages were sent.");
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
     res.status(500).send("Error fetching property data from Spark API.");
