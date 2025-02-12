@@ -9,49 +9,16 @@ function handleListingChange(listingDetails) {
   const messagePayload = {
     blocks: [
       {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `🏡 Listing Status Change`,
-          emoji: true
-        }
-      },
-      {
-        type: "section",
-        fields: [
-          {
-            type: "mrkdwn",
-            text: `*📍 Address:* ${listingDetails.address}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*💰 Price:* ${listingDetails.price}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*🔄 Status:* ${listingDetails.previousStatus} → *${listingDetails.newStatus}*`
-          }
-        ]
-      },
-      {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `📜 *Description:*\n${listingDetails.description}`
+          text: `🏡 *STATUS CHANGE*\n` + 
+                `*${listingDetails.address}*\n` +
+                `*${listingDetails.previousStatus} → ${listingDetails.newStatus}*\n` +
+                `*${listingDetails.price}*\n` +
+                `*Listing Agent:* ${listingDetails.agentName}\n` +
+                `*Cell:* ${listingDetails.agentPhone}`
         }
-      },
-      {
-        type: "section",
-        fields: [
-          {
-            type: "mrkdwn",
-            text: `*👤 Listing Agent:* ${listingDetails.agentName}`
-          },
-          {
-            type: "mrkdwn",
-            text: `*📞 Cell:* ${listingDetails.agentPhone}`
-          }
-        ]
       }
     ]
   };
