@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slack Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        button { margin: 10px; padding: 15px; font-size: 16px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Send Slack Test Messages</h1>
+    <button onclick="sendSlackMessage('Active')">3 Most Recent Active</button>
+    <button onclick="sendSlackMessage('Pending')">3 Most Recent Pending</button>
+    <button onclick="sendSlackMessage('Closed')">3 Most Recent Closed</button>
+
+    <p id="status"></p>
+
+    <script>
+        function sendSlackMessage(status) {
+            document.getElementById("status").innerText = `Sending ${status} listings...`;
+            fetch(`/send-slack-test?status=${status}`)
+                .then(response => response.text())
+                .then(data => document.getElementById("status").innerText = data)
+                .catch(err => document.getElementById("status").innerText = "Error sending message.");
+        }
+    </script>
+</body>
+</html>
