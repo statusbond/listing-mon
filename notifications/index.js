@@ -12,7 +12,7 @@ function handleListingChange(listingDetails) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `:remax: *STATUS CHANGE*\n` + 
+          text: `🏡 *STATUS CHANGE*\n` + 
                 `${listingDetails.address}\n` +
                 `${listingDetails.price}\n` +
                 `${listingDetails.previousStatus} → ${listingDetails.newStatus}\n` +
