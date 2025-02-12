@@ -6,22 +6,18 @@ function handleListingChange(listingDetails) {
     return;
   }
 
-  // Format phone number as an SMS link
-  const smsLink = `<sms:${listingDetails.agentPhone}|${listingDetails.agentPhone}>`;
-
   const messagePayload = {
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `🏡 *STATUS CHANGE*\n` + 
+          text: `:remax: *STATUS CHANGE*\n` + 
                 `${listingDetails.address}\n` +
-                `${listingDetails.price}\n` +  // Price moved below address
+                `${listingDetails.price}\n` +
                 `${listingDetails.previousStatus} → ${listingDetails.newStatus}\n` +
-                `Days on Market: ${listingDetails.daysOnMarket}\n` +
                 `Listing Agent: ${listingDetails.agentName}\n` +
-                `Cell: ${smsLink}`
+                `Cell: ${listingDetails.agentPhone}`
         }
       }
     ]
