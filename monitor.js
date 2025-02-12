@@ -34,9 +34,9 @@ app.post('/listing-change', (req, res) => {
   }
 });
 
-// GET route to check for listing status changes
+// GET route to check for listing status changes (NOW SORTED BY `StatusChangeTimestamp`)
 app.get('/test-spark', async (req, res) => {
-  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=ModificationTimestamp desc&$top=5';
+  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=StatusChangeTimestamp desc&$top=5';
 
   try {
     const response = await axios.get(sparkApiUrl, {
@@ -91,10 +91,10 @@ app.get('/test-spark', async (req, res) => {
   }
 });
 
-// GET route to fetch and send Slack test messages
+// GET route to fetch and send Slack test messages (NOW SORTED BY `StatusChangeTimestamp`)
 app.get('/send-slack-test', async (req, res) => {
   const status = req.query.status || "Active"; // Default to Active if no status is provided
-  const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=ModificationTimestamp desc&$top=3`;
+  const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=StatusChangeTimestamp desc&$top=3`;
 
   try {
     const response = await axios.get(sparkApiUrl, {
