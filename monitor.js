@@ -55,6 +55,9 @@ app.get('/test-spark', async (req, res) => {
         // Format Price with Commas
         const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
 
+        // Calculate Days on Market (assuming "DaysOnMarket" field exists in API)
+        const daysOnMarket = property.DaysOnMarket || "N/A";
+
         // Extract Listing Agent Info
         const agentName = property.ListAgentFullName || "Unknown Agent";
         const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
@@ -66,6 +69,7 @@ app.get('/test-spark', async (req, res) => {
           description: property.PublicRemarks || "No description available.",
           newStatus: newStatus,
           previousStatus: previousStatus,
+          daysOnMarket: daysOnMarket,
           agentName: agentName,
           agentPhone: agentPhone
         };
@@ -81,7 +85,6 @@ app.get('/test-spark', async (req, res) => {
     res.status(500).send("Error fetching property data from Spark API.");
   }
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
