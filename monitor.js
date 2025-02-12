@@ -49,14 +49,20 @@ app.get('/test-spark', async (req, res) => {
       const previousStatus = await getPreviousStatus(listingId);
 
       if (newStatus !== previousStatus) {
+        // Format Address (remove ZIP)
+        const formattedAddress = `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
+
+        // Format Price with Commas
+        const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
+
         // Extract Listing Agent Info
         const agentName = property.ListAgentFullName || "Unknown Agent";
         const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
 
         const listingDetails = {
           title: `Listing Status Change`,
-          price: property.ListPrice ? `$${property.ListPrice}` : "N/A",
-          address: `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''} ${property.PostalCode || ''}`.trim(),
+          price: formattedPrice,
+          address: formattedAddress,
           description: property.PublicRemarks || "No description available.",
           newStatus: newStatus,
           previousStatus: previousStatus,
@@ -75,6 +81,7 @@ app.get('/test-spark', async (req, res) => {
     res.status(500).send("Error fetching property data from Spark API.");
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
