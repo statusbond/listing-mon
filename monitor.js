@@ -3,8 +3,6 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const path = require('path');
 const { handleListingChange } = require('./notifications');
-// Removed previous status functions (getPreviousStatus and saveStatus) if they were solely used for previous status tracking.
-// If you still want to update a stored status for deduplication purposes, you can keep saveStatus, but we'll omit previous status from messages.
 
 const app = express();
 app.use(bodyParser.json());
@@ -35,7 +33,7 @@ app.post('/listing-change', (req, res) => {
   }
 });
 
-// GET route to check for listing status changes (Sorted by `StatusChangeTimestamp`)
+// GET route to check for listing status changes (Sorted by StatusChangeTimestamp)
 app.get('/test-spark', async (req, res) => {
   const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=StatusChangeTimestamp desc&$top5';
 
@@ -54,11 +52,12 @@ app.get('/test-spark', async (req, res) => {
     }
 
     for (const property of properties) {
-      // Using only current status; no previous status tracking in the Slack message.
+      // We'll simply use the current status; no previous status comparison.
       const newStatus = property.StandardStatus;
 
-      // Format Address (you can adjust if needed)
-      const formattedAddress = `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
+      // Format Address – using UnparsedAddress if available.
+      const formattedAddress = property.UnparsedAddress ||
+        `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
 
       // Format Price with commas
       const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
@@ -67,33 +66,30 @@ app.get('/test-spark', async (req, res) => {
       const agentName = property.ListAgentFullName || "Unknown Agent";
       const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
 
-      // Build the Slack message details (only current status is included, with an arrow)
+      // Construct the Slack message details.
+      // The new status is shown with an arrow, with no placeholder for previous status.
       const listingDetails = {
         title: `Listing Status Change`,
         price: formattedPrice,
         address: formattedAddress,
         description: property.PublicRemarks || "No description available.",
-        // Simply show an arrow and the new status.
         newStatus: `→ ${newStatus}`,
         agentName: agentName,
         agentPhone: agentPhone
       };
 
-      // Optionally, if you have a function to store the latest status, you can call it here.
-      // await saveStatus(property.ListingId, newStatus);
-
-      // Send the Slack notification
+      // Send the Slack notification for this listing
       handleListingChange(listingDetails);
     }
 
-    res.send("Checked for status changes. Slack messages were sent if updates were found.");
+    res.send("Checked for status changes. Slack messages were sent for each update.");
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
     res.status(500).send("Error fetching property data from Spark API.");
   }
 });
 
-// GET route to fetch and send Slack test messages (Sorted by `StatusChangeTimestamp`)
+// GET route to fetch and send Slack test messages (Sorted by StatusChangeTimestamp)
 app.get('/send-slack-test', async (req, res) => {
   const status = req.query.status || "Active"; // Default to Active if no status provided
   const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=StatusChangeTimestamp desc&$top5`;
@@ -112,4 +108,34 @@ app.get('/send-slack-test', async (req, res) => {
       return res.status(404).send(`No ${status} properties found.`);
     }
 
-    for (const property of p
+    for (const property of properties) {
+      const formattedAddress = property.UnparsedAddress ||
+        `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
+      const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
+      const agentName = property.ListAgentFullName || "Unknown Agent";
+      const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
+
+      const listingDetails = {
+        title: `Listing Status Change`,
+        price: formattedPrice,
+        address: formattedAddress,
+        description: property.PublicRemarks || "No description available.",
+        newStatus: `→ ${status}`,
+        agentName: agentName,
+        agentPhone: agentPhone
+      };
+
+      handleListingChange(listingDetails);
+    }
+
+    res.send(`Sent 3 most recent ${status} listings to Slack.`);
+  } catch (error) {
+    console.error(`Error fetching ${status} properties:`, error.response?.data || error.message);
+    res.status(500).send(`Error fetching ${status} properties.`);
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
