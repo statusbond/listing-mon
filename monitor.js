@@ -3,7 +3,6 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const path = require('path');
 const { handleListingChange } = require('./notifications');
-const { getPreviousStatus, saveStatus } = require('./helpers/statusTracker');
 
 const app = express();
 app.use(bodyParser.json());
