@@ -1,41 +1,37 @@
-const axios = require('axios');
 const fs = require('fs');
+const axios = require('axios');
 const path = require('path');
 const { handleListingChange } = require('./notifications');
 
-const LAST_TIMESTAMP_FILE = path.join(__dirname, 'last_timestamp.txt');
+const TIMESTAMP_FILE = path.join(__dirname, 'last_timestamp.txt'); // File to store last timestamp
 
-// Function to retrieve the last checked timestamp
 async function getLastCheckedTimestamp() {
   try {
-    if (fs.existsSync(LAST_TIMESTAMP_FILE)) {
-      return fs.readFileSync(LAST_TIMESTAMP_FILE, 'utf8').trim();
+    if (fs.existsSync(TIMESTAMP_FILE)) {
+      return fs.readFileSync(TIMESTAMP_FILE, 'utf8').trim();
     }
   } catch (error) {
-    console.error("Error reading last checked timestamp:", error);
+    console.error("Error reading timestamp file:", error);
   }
-  return null;
+  return null; // Return null if no previous timestamp exists
 }
 
-// Function to save the latest checked timestamp
 async function saveLastCheckedTimestamp(timestamp) {
   try {
-    fs.writeFileSync(LAST_TIMESTAMP_FILE, timestamp, 'utf8');
+    fs.writeFileSync(TIMESTAMP_FILE, timestamp, 'utf8');
   } catch (error) {
-    console.error("Error saving last checked timestamp:", error);
+    console.error("Error saving timestamp file:", error);
   }
 }
 
-// Function to check for new listing status changes
 async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
-  // Construct Spark API query with filtering for office ID and timestamp
   let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
 
   if (lastTimestamp) {
-    sparkApiUrl += ` and StatusChangeTimestamp gt '${lastTimestamp}'`;
+    sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
   }
 
   sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone`;
@@ -49,40 +45,50 @@ async function checkForNewListings() {
       }
     });
 
-    const properties = response.data.value;
-    if (!properties || properties.length === 0) {
+    const listings = response.data.value;
+
+    if (!listings || listings.length === 0) {
       console.log("No new listings found.");
       return;
     }
 
-    for (const property of properties) {
-      const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
-      const addressParts = property.UnparsedAddress.split(',').map(part => part.trim());
+    let latestTimestamp = lastTimestamp;
 
-      const slackMessage = `STATUS CHANGE
-${addressParts[0]}
-${addressParts.slice(1).join(', ')}
+    for (const listing of listings) {
+      const formattedAddress = listing.UnparsedAddress || "No Address";
+      const formattedPrice = listing.ListPrice ? `$${listing.ListPrice.toLocaleString()}` : "N/A";
+      const agentName = listing.ListAgentFullName || "Unknown Agent";
+      const agentPhone = listing.ListAgentPreferredPhone || "No Phone Available";
+      const newStatus = listing.StandardStatus;
+      const timestamp = listing.StatusChangeTimestamp;
 
-${formattedPrice}
-→ ${property.StandardStatus}
+      // Send Slack message
+      handleListingChange({
+        title: "Listing Status Change",
+        price: formattedPrice,
+        address: formattedAddress,
+        newStatus: newStatus,
+        agentName: agentName,
+        agentPhone: agentPhone
+      });
 
-Agent: ${property.ListAgentFullName}
-Cell: ${property.ListAgentPreferredPhone}`;
-
-      handleListingChange(slackMessage);
+      // Update the latest timestamp if this one is newer
+      if (!latestTimestamp || timestamp > latestTimestamp) {
+        latestTimestamp = timestamp;
+      }
     }
 
-    // Save the timestamp of the latest listing change
-    if (properties.length > 0) {
-      const latestTimestamp = properties[0].StatusChangeTimestamp;
+    // Save the most recent timestamp for the next run
+    if (latestTimestamp) {
       await saveLastCheckedTimestamp(latestTimestamp);
     }
+
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
   }
 }
 
-// Run the polling function when the script starts
-(async () => {
-  await checkForNewListings();
-})();
+// Polling function (runs every X minutes)
+setInterval(checkForNewListings, 60000); // Run every 60 seconds
+
+module.exports = { checkForNewListings };
