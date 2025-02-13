@@ -15,7 +15,7 @@ function handleListingChange(listingDetails) {
           text: `🏡 *STATUS CHANGE*\n` + 
                 `${listingDetails.address}\n` +
                 `${listingDetails.price}\n` +
-                `${listingDetails.previousStatus} → ${listingDetails.newStatus}\n` +
+                `→ ${listingDetails.newStatus}\n` +
                 `Listing Agent: ${listingDetails.agentName}\n` +
                 `Cell: ${listingDetails.agentPhone}`
         }
