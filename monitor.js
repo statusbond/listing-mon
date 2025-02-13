@@ -31,7 +31,7 @@ async function checkForNewListings() {
   let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
 
   if (lastTimestamp) {
-    sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
+    sparkApiUrl += ` and StatusChangeTimestamp gt '${lastTimestamp}'`;
   }
 
   sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone`;
