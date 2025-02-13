@@ -92,7 +92,7 @@ app.get('/test-spark', async (req, res) => {
 // GET route to fetch and send Slack test messages (Sorted by StatusChangeTimestamp)
 app.get('/send-slack-test', async (req, res) => {
   const status = req.query.status || "Active"; // Default to Active if no status provided
-  const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=StatusChangeTimestamp desc&$top5`;
+  const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=StatusChangeTimestamp desc&$top=3`;
 
   try {
     const response = await axios.get(sparkApiUrl, {
