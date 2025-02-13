@@ -45,38 +45,34 @@ async function checkForNewListings() {
       }
     });
 
-    const listings = response.data.value;
-
-    if (!listings || listings.length === 0) {
+    const properties = response.data.value;
+    if (!properties || properties.length === 0) {
       console.log("No new listings found.");
       return;
     }
 
-    let latestTimestamp = lastTimestamp;
+    for (const property of properties) {
+      const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
+      const addressParts = property.UnparsedAddress.split(',').map(part => part.trim());
 
-    for (const listing of listings) {
-      const formattedAddress = listing.UnparsedAddress || "No Address";
-      const formattedPrice = listing.ListPrice ? `$${listing.ListPrice.toLocaleString()}` : "N/A";
-      const agentName = listing.ListAgentFullName || "Unknown Agent";
-      const agentPhone = listing.ListAgentPreferredPhone || "No Phone Available";
-      const newStatus = listing.StandardStatus;
-      const timestamp = listing.StatusChangeTimestamp;
+      const slackMessage = `STATUS CHANGE
+${addressParts[0]}
+${addressParts.slice(1).join(', ')}
 
-      // Send Slack message
-      handleListingChange({
-        title: "Listing Status Change",
-        price: formattedPrice,
-        address: formattedAddress,
-        newStatus: newStatus,
-        agentName: agentName,
-        agentPhone: agentPhone
-      });
+${formattedPrice}
+→ ${property.StandardStatus}
 
-      // Update the latest timestamp if this one is newer
-      if (!latestTimestamp || timestamp > latestTimestamp) {
-        latestTimestamp = timestamp;
-      }
+Agent: ${property.ListAgentFullName}
+Cell: ${property.ListAgentPreferredPhone}`;
+
+      handleListingChange(slackMessage);
     }
+
+    await saveLastCheckedTimestamp(properties[0].StatusChangeTimestamp);
+  } catch (error) {
+    console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
+  }
+}
 
     // Save the most recent timestamp for the next run
     if (latestTimestamp) {
