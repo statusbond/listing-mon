@@ -35,7 +35,7 @@ app.post('/listing-change', (req, res) => {
 
 // GET route to check for listing status changes (Sorted by StatusChangeTimestamp)
 app.get('/test-spark', async (req, res) => {
-  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=StatusChangeTimestamp desc&$top5';
+  const sparkApiUrl = 'https://replication.sparkapi.com/Reso/OData/Property?$orderby=StatusChangeTimestamp desc&$top=3';
 
   try {
     const response = await axios.get(sparkApiUrl, {
