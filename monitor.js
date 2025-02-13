@@ -1,44 +1,40 @@
-const express = require('express');
-const bodyParser = require('body-parser');
+const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
 const { handleListingChange } = require('./notifications');
 
-const app = express();
-app.use(bodyParser.json());
+const TIMESTAMP_FILE = path.join(__dirname, 'last_timestamp.txt'); // File to store last timestamp
 
-// Serve the Slack test page
-app.use(express.static('public'));
-
-// Root Status Route
-app.get('/', (req, res) => {
-  res.send(
-    'Service is running. Use POST /listing-change to send listing data, GET /test-spark to check for live listing status changes, or visit /slack-test to send Slack test messages.'
-  );
-});
-
-// Serve the Slack test page
-app.get('/slack-test', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'slack-test.html'));
-});
-
-// POST route to manually test listing changes
-app.post('/listing-change', (req, res) => {
+async function getLastCheckedTimestamp() {
   try {
-    handleListingChange(req.body);
-    res.status(200).send("Listing change processed successfully.");
+    if (fs.existsSync(TIMESTAMP_FILE)) {
+      return fs.readFileSync(TIMESTAMP_FILE, 'utf8').trim();
+    }
   } catch (error) {
-    console.error("Error processing listing change:", error);
-    res.status(500).send("Error processing listing change.");
+    console.error("Error reading timestamp file:", error);
   }
-});
+  return null; // Return null if no previous timestamp exists
+}
 
-// GET route to check for listing status changes (Sorted by StatusChangeTimestamp)
-app.get('/test-spark', async (req, res) => {
-  const sparkApiUrl = "https://replication.sparkapi.com/Reso/OData/Property?" +
-  "$filter=ListOfficeMlsId eq 'ocRMKP'&" +
-  "$orderby=StatusChangeTimestamp desc&" +
-  "$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone";
+async function saveLastCheckedTimestamp(timestamp) {
+  try {
+    fs.writeFileSync(TIMESTAMP_FILE, timestamp, 'utf8');
+  } catch (error) {
+    console.error("Error saving timestamp file:", error);
+  }
+}
+
+async function checkForNewListings() {
+  const lastTimestamp = await getLastCheckedTimestamp();
+  console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
+
+  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
+
+  if (lastTimestamp) {
+    sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
+  }
+
+  sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone`;
 
   try {
     const response = await axios.get(sparkApiUrl, {
@@ -49,96 +45,50 @@ app.get('/test-spark', async (req, res) => {
       }
     });
 
-    const properties = response.data.value;
-    if (!properties || properties.length === 0) {
-      return res.status(404).send("No property data found from Spark API.");
+    const listings = response.data.value;
+
+    if (!listings || listings.length === 0) {
+      console.log("No new listings found.");
+      return;
     }
 
-    for (const property of properties) {
-      // We'll simply use the current status; no previous status comparison.
-      const newStatus = property.StandardStatus;
+    let latestTimestamp = lastTimestamp;
 
-      // Format Address – using UnparsedAddress if available.
-      const formattedAddress = property.UnparsedAddress ||
-        `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
+    for (const listing of listings) {
+      const formattedAddress = listing.UnparsedAddress || "No Address";
+      const formattedPrice = listing.ListPrice ? `$${listing.ListPrice.toLocaleString()}` : "N/A";
+      const agentName = listing.ListAgentFullName || "Unknown Agent";
+      const agentPhone = listing.ListAgentPreferredPhone || "No Phone Available";
+      const newStatus = listing.StandardStatus;
+      const timestamp = listing.StatusChangeTimestamp;
 
-      // Format Price with commas
-      const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
-
-      // Extract Listing Agent Info
-      const agentName = property.ListAgentFullName || "Unknown Agent";
-      const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
-
-      // Construct the Slack message details.
-      // The new status is shown with an arrow, with no placeholder for previous status.
-      const listingDetails = {
-        title: `Listing Status Change`,
+      // Send Slack message
+      handleListingChange({
+        title: "Listing Status Change",
         price: formattedPrice,
         address: formattedAddress,
-        description: property.PublicRemarks || "No description available.",
-        newStatus: `→ ${newStatus}`,
+        newStatus: newStatus,
         agentName: agentName,
         agentPhone: agentPhone
-      };
+      });
 
-      // Send the Slack notification for this listing
-      handleListingChange(listingDetails);
+      // Update the latest timestamp if this one is newer
+      if (!latestTimestamp || timestamp > latestTimestamp) {
+        latestTimestamp = timestamp;
+      }
     }
 
-    res.send("Checked for status changes. Slack messages were sent for each update.");
+    // Save the most recent timestamp for the next run
+    if (latestTimestamp) {
+      await saveLastCheckedTimestamp(latestTimestamp);
+    }
+
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
-    res.status(500).send("Error fetching property data from Spark API.");
   }
-});
+}
 
-// GET route to fetch and send Slack test messages (Sorted by StatusChangeTimestamp)
-app.get('/send-slack-test', async (req, res) => {
-  const status = req.query.status || "Active"; // Default to Active if no status provided
-  const sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=StandardStatus eq '${status}'&$orderby=StatusChangeTimestamp desc&$top=3`;
+// Polling function (runs every X minutes)
+setInterval(checkForNewListings, 60000); // Run every 60 seconds
 
-  try {
-    const response = await axios.get(sparkApiUrl, {
-      headers: {
-        'User-Agent': 'MySparkClient/1.0',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`
-      }
-    });
-
-    const properties = response.data.value;
-    if (!properties || properties.length === 0) {
-      return res.status(404).send(`No ${status} properties found.`);
-    }
-
-    for (const property of properties) {
-      const formattedAddress = property.UnparsedAddress ||
-        `${property.StreetNumber || ''} ${property.StreetName || ''}, ${property.City || ''}, ${property.StateOrProvince || ''}`.trim();
-      const formattedPrice = property.ListPrice ? `$${property.ListPrice.toLocaleString()}` : "N/A";
-      const agentName = property.ListAgentFullName || "Unknown Agent";
-      const agentPhone = property.ListAgentPreferredPhone || "No Phone Available";
-
-      const listingDetails = {
-        title: `Listing Status Change`,
-        price: formattedPrice,
-        address: formattedAddress,
-        description: property.PublicRemarks || "No description available.",
-        newStatus: `→ ${status}`,
-        agentName: agentName,
-        agentPhone: agentPhone
-      };
-
-      handleListingChange(listingDetails);
-    }
-
-    res.send(`Sent 3 most recent ${status} listings to Slack.`);
-  } catch (error) {
-    console.error(`Error fetching ${status} properties:`, error.response?.data || error.message);
-    res.status(500).send(`Error fetching ${status} properties.`);
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+module.exports = { checkForNewListings };
