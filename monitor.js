@@ -1,33 +1,37 @@
-const fs = require('fs');
 const axios = require('axios');
+const fs = require('fs');
 const path = require('path');
 const { handleListingChange } = require('./notifications');
 
-const TIMESTAMP_FILE = path.join(__dirname, 'last_timestamp.txt'); // File to store last timestamp
+const LAST_TIMESTAMP_FILE = path.join(__dirname, 'last_timestamp.txt');
 
+// Function to retrieve the last checked timestamp
 async function getLastCheckedTimestamp() {
   try {
-    if (fs.existsSync(TIMESTAMP_FILE)) {
-      return fs.readFileSync(TIMESTAMP_FILE, 'utf8').trim();
+    if (fs.existsSync(LAST_TIMESTAMP_FILE)) {
+      return fs.readFileSync(LAST_TIMESTAMP_FILE, 'utf8').trim();
     }
   } catch (error) {
-    console.error("Error reading timestamp file:", error);
+    console.error("Error reading last checked timestamp:", error);
   }
-  return null; // Return null if no previous timestamp exists
+  return null;
 }
 
+// Function to save the latest checked timestamp
 async function saveLastCheckedTimestamp(timestamp) {
   try {
-    fs.writeFileSync(TIMESTAMP_FILE, timestamp, 'utf8');
+    fs.writeFileSync(LAST_TIMESTAMP_FILE, timestamp, 'utf8');
   } catch (error) {
-    console.error("Error saving timestamp file:", error);
+    console.error("Error saving last checked timestamp:", error);
   }
 }
 
+// Function to check for new listing status changes
 async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
+  // Construct Spark API query with filtering for office ID and timestamp
   let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
 
   if (lastTimestamp) {
@@ -68,23 +72,17 @@ Cell: ${property.ListAgentPreferredPhone}`;
       handleListingChange(slackMessage);
     }
 
-    await saveLastCheckedTimestamp(properties[0].StatusChangeTimestamp);
-  } catch (error) {
-    console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
-  }
-}
-
-    // Save the most recent timestamp for the next run
-    if (latestTimestamp) {
+    // Save the timestamp of the latest listing change
+    if (properties.length > 0) {
+      const latestTimestamp = properties[0].StatusChangeTimestamp;
       await saveLastCheckedTimestamp(latestTimestamp);
     }
-
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
   }
 }
 
-// Polling function (runs every X minutes)
-setInterval(checkForNewListings, 60000); // Run every 60 seconds
-
-module.exports = { checkForNewListings };
+// Run the polling function when the script starts
+(async () => {
+  await checkForNewListings();
+})();
