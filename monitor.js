@@ -28,7 +28,8 @@ async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
-  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
+  // Use the known good query for office key filtering for Remax.
+  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000'`;
 
   if (lastTimestamp) {
     sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
@@ -88,7 +89,7 @@ async function checkForNewListings() {
   }
 }
 
-// Polling function (runs every X minutes)
-setInterval(checkForNewListings, 60000); // Run every 60 seconds
+// Polling function (runs every 60 seconds)
+setInterval(checkForNewListings, 60000);
 
 module.exports = { checkForNewListings };
