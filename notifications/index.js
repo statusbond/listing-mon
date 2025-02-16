@@ -6,7 +6,7 @@ function handleListingChange(listingDetails) {
     return;
   }
 
-  // Split the address into street and city/state/zip (assuming a standard format)
+  // Split the address into street and city/state/zip
   const addressParts = listingDetails.address.split(',');
   const streetAddress = addressParts[0].trim();
   const cityStateZip = addressParts.slice(1).join(',').trim();
@@ -17,11 +17,11 @@ function handleListingChange(listingDetails) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `🏡 *STATUS CHANGE*\n` +
-                `*${streetAddress}*\n${cityStateZip}\n\n` +
-                `${listingDetails.price}\n` +
+          text: `🏡 *LISTING STATUS CHANGE*\n` +  // Updated text for first line
+                `${streetAddress}\n${cityStateZip}` +  // No extra new lines
+                `\n${listingDetails.price}\n` +
                 `${listingDetails.newStatus}\n` +
-                `Listing Agent: ${listingDetails.agentName}\n` +
+                `Agent: ${listingDetails.agentName}\n` +  // Changed from "Listing Agent" to "Agent"
                 `Cell: ${listingDetails.agentPhone}`
         }
       }
