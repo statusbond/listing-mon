@@ -6,10 +6,12 @@ function handleListingChange(listingDetails) {
     return;
   }
 
-  // Split the address into street and city/state/zip
+  // Split the address by commas
   const addressParts = listingDetails.address.split(',');
-  const streetAddress = addressParts[0].trim();
-  const cityStateZip = addressParts.slice(1).join(',').trim();
+
+  // Assume the last two parts are always City, State, Zip (to handle varying street address lengths)
+  const cityStateZip = addressParts.slice(-2).join(',').trim(); // Get the last two elements
+  const streetAddress = addressParts.slice(0, -2).join(',').trim(); // Everything before that is the street address
 
   const messagePayload = {
     blocks: [
@@ -17,11 +19,11 @@ function handleListingChange(listingDetails) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `🏡 *LISTING STATUS CHANGE*\n` +  // Updated text for first line
-                `${streetAddress}\n${cityStateZip}` +  // No extra new lines
+          text: `🏡 *LISTING STATUS CHANGE*\n` +  
+                `${streetAddress}\n${cityStateZip}` +  
                 `\n${listingDetails.price}\n` +
                 `${listingDetails.newStatus}\n` +
-                `Agent: ${listingDetails.agentName}\n` +  // Changed from "Listing Agent" to "Agent"
+                `Agent: ${listingDetails.agentName}\n` +
                 `Cell: ${listingDetails.agentPhone}`
         }
       }
