@@ -28,7 +28,8 @@ async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
-  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
+  // Use the known good query filtering by ListOfficeKey for Remax.
+  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000'`;
 
   if (lastTimestamp) {
     sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
@@ -62,7 +63,7 @@ async function checkForNewListings() {
       const newStatus = listing.StandardStatus;
       const timestamp = listing.StatusChangeTimestamp;
 
-      // Send Slack message
+      // Send Slack message with the listing details.
       handleListingChange({
         title: "Listing Status Change",
         price: formattedPrice,
@@ -72,13 +73,12 @@ async function checkForNewListings() {
         agentPhone: agentPhone
       });
 
-      // Update the latest timestamp if this one is newer
       if (!latestTimestamp || timestamp > latestTimestamp) {
         latestTimestamp = timestamp;
       }
     }
 
-    // Save the most recent timestamp for the next run
+    // Save the most recent timestamp for the next run.
     if (latestTimestamp) {
       await saveLastCheckedTimestamp(latestTimestamp);
     }
@@ -88,7 +88,7 @@ async function checkForNewListings() {
   }
 }
 
-// Polling function (runs every X minutes)
-setInterval(checkForNewListings, 60000); // Run every 60 seconds
+// Polling function (runs every 60 seconds)
+setInterval(checkForNewListings, 60000);
 
 module.exports = { checkForNewListings };
