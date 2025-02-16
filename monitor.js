@@ -28,13 +28,37 @@ async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
-  // Use the known good query filtering by ListOfficeKey for Remax.
-  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000'`;
+  // If no last timestamp exists and we're running in production,
+  // update the timestamp without sending notifications.
+  if (!lastTimestamp && process.env.NODE_ENV === 'production') {
+    console.log("First run in production: updating timestamp without sending notifications.");
+    let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000' and StatusChangeTimestamp gt 2025-02-11T00:00:00Z&$orderby=StatusChangeTimestamp desc&$select=StatusChangeTimestamp`;
+    try {
+      const response = await axios.get(sparkApiUrl, {
+        headers: {
+          'User-Agent': 'MySparkClient/1.0',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${process.env.SPARK_ACCESS_TOKEN}`
+        }
+      });
+      const listings = response.data.value;
+      if (listings && listings.length > 0) {
+        // Assume the first listing is the most recent.
+        const latestTimestamp = listings[0].StatusChangeTimestamp;
+        await saveLastCheckedTimestamp(latestTimestamp);
+        console.log("Updated timestamp to:", latestTimestamp);
+      }
+    } catch (error) {
+      console.error("Error during first run timestamp update:", error.response?.data || error.message);
+    }
+    return;
+  }
 
+  // Normal behavior: query the API for listings newer than lastTimestamp.
+  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000'`;
   if (lastTimestamp) {
     sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
   }
-
   sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone`;
 
   try {
@@ -47,7 +71,6 @@ async function checkForNewListings() {
     });
 
     const listings = response.data.value;
-
     if (!listings || listings.length === 0) {
       console.log("No new listings found.");
       return;
@@ -78,11 +101,9 @@ async function checkForNewListings() {
       }
     }
 
-    // Save the most recent timestamp for the next run.
     if (latestTimestamp) {
       await saveLastCheckedTimestamp(latestTimestamp);
     }
-
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
   }
