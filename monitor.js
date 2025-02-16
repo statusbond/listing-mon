@@ -28,14 +28,13 @@ async function checkForNewListings() {
   const lastTimestamp = await getLastCheckedTimestamp();
   console.log(`Last checked timestamp: ${lastTimestamp || "None (First Run)"}`);
 
-  // Use the known good query for office key filtering for Remax.
-  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeKey eq '20200217215042865159000000'`;
+  let sparkApiUrl = `https://replication.sparkapi.com/Reso/OData/Property?$filter=ListOfficeMlsId eq 'ocRMKP'`;
 
   if (lastTimestamp) {
     sparkApiUrl += ` and StatusChangeTimestamp gt ${lastTimestamp}`;
   }
 
-  sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone`;
+  sparkApiUrl += `&$orderby=StatusChangeTimestamp desc&$select=UnparsedAddress,ListPrice,StandardStatus,StatusChangeTimestamp,ListAgentFullName,ListAgentPreferredPhone,ListOfficeMlsId`;
 
   try {
     const response = await axios.get(sparkApiUrl, {
@@ -47,9 +46,19 @@ async function checkForNewListings() {
     });
 
     const listings = response.data.value;
-
     if (!listings || listings.length === 0) {
       console.log("No new listings found.");
+      return;
+    }
+
+    // In production (main), if this is the first run (no lastTimestamp), update the timestamp without sending notifications.
+    if (!lastTimestamp && process.env.NODE_ENV === 'production') {
+      // Find the most recent timestamp among the returned listings.
+      const latestTimestamp = listings.reduce((acc, listing) => {
+        return (!acc || listing.StatusChangeTimestamp > acc) ? listing.StatusChangeTimestamp : acc;
+      }, null);
+      console.log("First run in production: updating last timestamp to", latestTimestamp, "without sending notifications.");
+      await saveLastCheckedTimestamp(latestTimestamp);
       return;
     }
 
@@ -63,7 +72,7 @@ async function checkForNewListings() {
       const newStatus = listing.StandardStatus;
       const timestamp = listing.StatusChangeTimestamp;
 
-      // Send Slack message
+      // Send Slack message for each new listing.
       handleListingChange({
         title: "Listing Status Change",
         price: formattedPrice,
@@ -73,17 +82,14 @@ async function checkForNewListings() {
         agentPhone: agentPhone
       });
 
-      // Update the latest timestamp if this one is newer
       if (!latestTimestamp || timestamp > latestTimestamp) {
         latestTimestamp = timestamp;
       }
     }
 
-    // Save the most recent timestamp for the next run
     if (latestTimestamp) {
       await saveLastCheckedTimestamp(latestTimestamp);
     }
-
   } catch (error) {
     console.error("Error fetching property data from Spark API:", error.response?.data || error.message);
   }
